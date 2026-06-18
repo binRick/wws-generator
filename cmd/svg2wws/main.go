@@ -30,6 +30,7 @@ type flags struct {
 	scale     float64
 	power     int
 	speed     int
+	passes    int
 	name      string
 }
 
@@ -40,6 +41,7 @@ func run(args []string) error {
 		rotations: "8",
 		power:     0,
 		speed:     5,
+		passes:    1,
 	}
 	fs := newFlagSet(&f)
 	if err := fs.parse(args); err != nil {
@@ -87,6 +89,7 @@ func run(args []string) error {
 		Scale:     f.scale,
 		CutPower:  f.power,
 		CutSpeed:  f.speed,
+		CutPasses: f.passes,
 		Time:      time.Now().UnixMilli(),
 	})
 	if err != nil {
@@ -197,6 +200,8 @@ func (fs *flagSet) parse(args []string) error {
 			err = setInt(next, &f.power)
 		case "--speed":
 			err = setInt(next, &f.speed)
+		case "--passes":
+			err = setInt(next, &f.passes)
 		case "--name":
 			f.name, err = next()
 		default:
@@ -256,6 +261,7 @@ Options:
   --scale F          force user-unit -> mm factor (default: auto; 1 unit = 1 mm)
   --power N          cut power 0-100 (default 0; set per material in MakeIt!)
   --speed N          cut speed (default 5)
+  --passes N         cut passes / repeat (default 1)
 
 Pieces are nested with true polygon footprints; parts that don't fit spill onto
 additional sheets, each emitted as its own canvas. The layout is anchored at the

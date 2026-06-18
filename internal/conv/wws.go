@@ -14,6 +14,7 @@ type BuildOptions struct {
 	Name      string
 	CutPower  int
 	CutSpeed  int
+	CutPasses int
 	MaterialW float64
 	MaterialH float64
 	Time      int64
@@ -216,7 +217,7 @@ func Build(placements []Placement, nSheets int, opt BuildOptions) (*wwsFile, err
 		canvases[pl.Sheet].Objects = append(canvases[pl.Sheet].Objects, obj)
 
 		f.ProcessList[objID] = wwsProc{
-			Cut:         wwsPS{Power: opt.CutPower, Speed: opt.CutSpeed, Repeat: 1},
+			Cut:         wwsPS{Power: opt.CutPower, Speed: opt.CutSpeed, Repeat: cutRepeat(opt.CutPasses)},
 			Engrave:     wwsPS{Power: 0, Speed: 2, Repeat: 1},
 			FillEngrave: wwsPS{Power: 0, Speed: 2, Repeat: 1},
 			ProcessMode: "cut", OneWayScan: true, LineDesity: 100,
@@ -274,6 +275,13 @@ func round3(v float64) float64 {
 		return 0 // avoid -0
 	}
 	return r
+}
+
+func cutRepeat(passes int) int {
+	if passes < 1 {
+		return 1
+	}
+	return passes
 }
 
 func strPtr(s string) *string { return &s }

@@ -17,6 +17,7 @@ type Options struct {
 	Scale     float64 // user-unit -> mm override; <=0 means auto
 	CutPower  int
 	CutSpeed  int
+	CutPasses int
 	Time      int64
 }
 
@@ -66,6 +67,7 @@ func Convert(r io.Reader, opt Options) ([]byte, Summary, error) {
 		Name:      opt.Name,
 		CutPower:  opt.CutPower,
 		CutSpeed:  opt.CutSpeed,
+		CutPasses: opt.CutPasses,
 		MaterialW: opt.MaterialW,
 		MaterialH: opt.MaterialH,
 		Time:      opt.Time,
