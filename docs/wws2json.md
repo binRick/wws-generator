@@ -104,6 +104,9 @@ that's a one-liner; on a canvas, `ctx.setTransform(a,b,c,d,e,f)` then draw. Grou
 membership is informational (`groupPath`) — the transform is already absolute to the
 canvas, so you don't need to compose group matrices yourself.
 
+**Website team:** see [`wws2json-web-renderer.md`](wws2json-web-renderer.md) for a
+complete, dependency-free reference renderer (HTML + JS) and a per-type cheat-sheet.
+
 ## Notes / limits
 
 - Coordinates are millimetres; transform components are rounded to 6 dp, geometry to

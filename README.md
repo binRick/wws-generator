@@ -137,6 +137,7 @@ clear space around it); reposition it on the bed inside MakeIt!. See
 | [`docs/svg2wws.md`](docs/svg2wws.md) | SVG → `.wws` converter: pipeline, nesting, limits |
 | [`docs/wws2svg.md`](docs/wws2svg.md) | `.wws` → SVG converter (reverse): transforms, batch, limits |
 | [`docs/wws2json.md`](docs/wws2json.md) | `.wws` → detailed JSON: schema for a web renderer |
+| [`docs/wws2json-web-renderer.md`](docs/wws2json-web-renderer.md) | Website-team guide: render the JSON in a browser (+ reference renderer) |
 | [`docs/svg2wws-agent.md`](docs/svg2wws-agent.md) | Using `svg2wws` from another repo (CLI contract for AI agents) |
 | [`docs/svg2wws-internals.md`](docs/svg2wws-internals.md) | Converter architecture & implementation deep-dive |
 | [`docs/TESTPLAN.md`](docs/TESTPLAN.md) | Test plan + feature→test coverage map |
