@@ -1,7 +1,10 @@
 package conv
 
 import (
+	"bytes"
+	"encoding/json"
 	"math"
+	"os"
 	"strings"
 	"testing"
 )
@@ -160,6 +163,131 @@ func TestNestNoOverlapAndSpacing(t *testing.T) {
 }
 
 func approx(a, b float64) bool { return math.Abs(a-b) < 1e-6 }
+
+// --- end-to-end: svg -> wws (uses the in-repo sample) ---
+
+const sampleSVG = "../../samples/test-parts.svg"
+const sampleWWS = "../../samples/square-100.known-good.wws"
+
+func convertSample(t *testing.T, mw, mh, spacing float64) ([]byte, Summary) {
+	t.Helper()
+	data, err := os.ReadFile(sampleSVG)
+	if err != nil {
+		t.Fatalf("read sample svg: %v", err)
+	}
+	out, sum, err := Convert(bytes.NewReader(data), Options{
+		Name: "t", MaterialW: mw, MaterialH: mh, Spacing: spacing, Grid: 1.0,
+		Rotations: []float64{0, 90, 180, 270}, Time: 1,
+	})
+	if err != nil {
+		t.Fatalf("convert: %v", err)
+	}
+	return out, sum
+}
+
+func TestConvertEndToEnd(t *testing.T) {
+	const spacing = 3.0
+	out, sum := convertSample(t, 300, 200, spacing)
+	if sum.Pieces != 5 {
+		t.Fatalf("pieces = %d, want 5", sum.Pieces)
+	}
+	var f map[string]any
+	if err := json.Unmarshal(out, &f); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if f["version"] != "3.0.4" {
+		t.Fatalf("version = %v, want 3.0.4", f["version"])
+	}
+	// Collect object ids + extents; check within material and top-left anchor.
+	canvases := f["canvasList"].([]any)
+	ids := map[string]bool{}
+	minL, minT := math.Inf(1), math.Inf(1)
+	for _, cv := range canvases {
+		c := cv.(map[string]any)
+		for _, ov := range c["objects"].([]any) {
+			o := ov.(map[string]any)
+			ids[o["id"].(string)] = true
+			L, T := o["left"].(float64), o["top"].(float64)
+			W, H := o["width"].(float64), o["height"].(float64)
+			if L < -0.5 || T < -0.5 || L+W > 300.5 || T+H > 200.5 {
+				t.Fatalf("object outside material: left=%.2f top=%.2f w=%.2f h=%.2f", L, T, W, H)
+			}
+			minL, minT = math.Min(minL, L), math.Min(minT, T)
+		}
+	}
+	if math.Abs(minL-spacing) > 0.5 || math.Abs(minT-spacing) > 0.5 {
+		t.Fatalf("layout not anchored top-left at spacing: min=(%.2f,%.2f), want ~(%.1f,%.1f)", minL, minT, spacing, spacing)
+	}
+	// processList keys must match the object ids exactly.
+	pl := f["processList"].(map[string]any)
+	if len(pl) != len(ids) {
+		t.Fatalf("processList has %d entries, want %d", len(pl), len(ids))
+	}
+	for k := range pl {
+		if !ids[k] {
+			t.Fatalf("processList key %s has no matching object", k)
+		}
+	}
+}
+
+func TestMultiSheetSpill(t *testing.T) {
+	_, sum := convertSample(t, 120, 120, 3)
+	if sum.Sheets < 2 {
+		t.Fatalf("expected spill onto >=2 sheets on a 120x120 sheet, got %d", sum.Sheets)
+	}
+}
+
+func TestOversizedErrors(t *testing.T) {
+	data, err := os.ReadFile(sampleSVG)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = Convert(bytes.NewReader(data), Options{
+		MaterialW: 50, MaterialH: 50, Spacing: 3, Grid: 1.0, Rotations: []float64{0}, Time: 1,
+	})
+	if err == nil {
+		t.Fatal("expected an error for a piece larger than the sheet")
+	}
+}
+
+// --- end-to-end: wws -> svg ---
+
+func TestWWSToSVGsSample(t *testing.T) {
+	data, err := os.ReadFile(sampleWWS)
+	if err != nil {
+		t.Fatalf("read sample wws: %v", err)
+	}
+	out, err := WWSToSVGs(data)
+	if err != nil {
+		t.Fatalf("wws2svg: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("canvases = %d, want 1", len(out))
+	}
+	cs := out[0]
+	if cs.Empty || cs.Objects != 1 {
+		t.Fatalf("expected 1 object, got %d (empty=%v)", cs.Objects, cs.Empty)
+	}
+	if !strings.Contains(cs.SVG, "<svg") || !strings.Contains(cs.SVG, "<rect") {
+		t.Fatalf("SVG missing expected elements:\n%s", cs.SVG)
+	}
+}
+
+// --- round trip: svg -> wws -> svg keeps every piece ---
+
+func TestRoundTrip(t *testing.T) {
+	out, _ := convertSample(t, 300, 200, 3) // 5 pieces, one canvas
+	svgs, err := WWSToSVGs(out)
+	if err != nil {
+		t.Fatalf("wws2svg of generated file: %v", err)
+	}
+	if len(svgs) != 1 {
+		t.Fatalf("canvases = %d, want 1", len(svgs))
+	}
+	if n := strings.Count(svgs[0].SVG, "<path"); n != 5 {
+		t.Fatalf("round-trip path count = %d, want 5", n)
+	}
+}
 
 // --- wws -> svg transform validation ---
 

@@ -118,9 +118,11 @@ clear space around it); reposition it on the bed inside MakeIt!. See
 | [`docs/wws2svg.md`](docs/wws2svg.md) | `.wws` → SVG converter (reverse): transforms, batch, limits |
 | [`docs/svg2wws-agent.md`](docs/svg2wws-agent.md) | Using `svg2wws` from another repo (CLI contract for AI agents) |
 | [`docs/svg2wws-internals.md`](docs/svg2wws-internals.md) | Converter architecture & implementation deep-dive |
+| [`docs/TESTPLAN.md`](docs/TESTPLAN.md) | Test plan + feature→test coverage map |
 | [`CLAUDE.md`](CLAUDE.md) | Orientation for AI sessions (read first) |
 | `cmd/svg2wws/`, `cmd/wws2svg/` | CLI entry points (SVG→.wws and .wws→SVG) |
 | `internal/conv/` | Converters: SVG parse, nesting, `.wws` emit, and `.wws`→SVG |
+| `scripts/test.sh` | Pre-push test runner (build, unit/e2e, CLI smoke, library sweep) |
 | `src/generate-square.js` | Proven write recipe / proof-of-concept generator |
 | `samples/square-100.known-good.wws` | Generated file **confirmed to open in MakeIt!** |
 | `samples/square-test.original.wws` | Hand-made reference file (generation template) |
@@ -135,6 +137,18 @@ is stored as Fabric `path` command arrays (`[["M",x,y],["L",x,y],["C",...]]`). L
 settings live in `processList`, keyed by object `id`; layers are grouped by stroke
 color in `layerDataList`. Red `#E61F19` = cut. Target `version: "3.0.4"`. See
 [`docs/wws-format.md`](docs/wws-format.md) for everything.
+
+## Testing
+
+Run the full suite before pushing — it builds both binaries, runs the Go unit +
+end-to-end tests, smoke-tests both CLIs, and (if a `.wws` library is present)
+sweeps it and checks every SVG is well-formed:
+
+```bash
+./scripts/test.sh        # prints ALL CHECKS PASSED on success
+```
+
+See [`docs/TESTPLAN.md`](docs/TESTPLAN.md) for the feature→test coverage map.
 
 ## Status
 

@@ -4,6 +4,12 @@ Goal of this repo: **read and generate WeCreat MakeIt! `.wws` files** for a WeCr
 60W laser (WeCreat Vision), so designs can be produced/converted programmatically
 instead of only by hand in the closed MakeIt! GUI.
 
+## Before pushing
+
+Run `./scripts/test.sh` — it must print `ALL CHECKS PASSED` (gofmt, vet, build both
+binaries, `go test ./...`, CLI smoke tests, and an optional sweep of the `.wws`
+library). Feature→test map and details in `docs/TESTPLAN.md`.
+
 ## The one thing to know
 
 `.wws` is **plain JSON** whose object model is **Fabric.js**. WeCreat markets it as a
