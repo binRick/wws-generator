@@ -65,6 +65,19 @@ Defaults: `--spacing 3 --grid 1.0 --rotations 8`; oversized single pieces error 
 **Not yet hardware-verified** — outputs pass structural + no-overlap validation but no
 converter file has been confirmed to open in MakeIt!. Have the user test one.
 
+## WWS → SVG converter (built — `wws2svg`)
+
+Reverse tool: `cmd/wws2svg` (CLI) + `internal/conv/wwsread.go`; spec is
+**`docs/wws2svg.md`**. Build: `go build -o wws2svg ./cmd/wws2svg`. Run:
+`./wws2svg --in design.wws --out ./svgs` (or pass a directory to batch). Emits one
+SVG per canvas, geometry in mm, stroke/fill colors preserved. It replicates Fabric's
+`calcOwnMatrix` (origin/scale/angle/flip/skew) and composes group transforms, emitting
+each object as the matching SVG element with a `transform="matrix(...)"`. Validated
+across the full 339-file library at `~/Desktop/cups/WWS/` (1553 SVGs, all well-formed;
+AABB matches Fabric to <0.03mm for un-rotated files; rotation/flip/group covered by unit
+tests). Text is approximate (no font embedding); it's geometry-faithful, not a byte
+round-trip (laser settings/layers are dropped).
+
 ### Next directions (not yet built)
 
 - Verify converter output opens in MakeIt!; confirm the exact SVG-unit→mm import rule.

@@ -26,6 +26,15 @@ go build -o svg2wws ./cmd/svg2wws
 ./svg2wws --in parts.svg --material 120x120 --out parts.wws
 ```
 
+Convert the other way — `.wws` → SVG (one SVG per canvas), single file or a whole
+folder:
+
+```bash
+go build -o wws2svg ./cmd/wws2svg
+./wws2svg --in design.wws --out ./svgs
+./wws2svg --in ~/Desktop/cups/WWS --out ./svgs   # batch a directory
+```
+
 Or just generate a plain cut square (the original proof-of-concept):
 
 ```bash
@@ -57,11 +66,12 @@ clear space around it); reposition it on the bed inside MakeIt!. See
 | --- | --- |
 | [`docs/wws-format.md`](docs/wws-format.md) | Full reverse-engineered `.wws` format spec |
 | [`docs/svg2wws.md`](docs/svg2wws.md) | SVG → `.wws` converter: pipeline, nesting, limits |
+| [`docs/wws2svg.md`](docs/wws2svg.md) | `.wws` → SVG converter (reverse): transforms, batch, limits |
 | [`docs/svg2wws-agent.md`](docs/svg2wws-agent.md) | Using `svg2wws` from another repo (CLI contract for AI agents) |
 | [`docs/svg2wws-internals.md`](docs/svg2wws-internals.md) | Converter architecture & implementation deep-dive |
 | [`CLAUDE.md`](CLAUDE.md) | Orientation for AI sessions (read first) |
-| `cmd/svg2wws/` | CLI entry point for the converter |
-| `internal/conv/` | Converter: SVG parse, piece detection, nesting, `.wws` emit |
+| `cmd/svg2wws/`, `cmd/wws2svg/` | CLI entry points (SVG→.wws and .wws→SVG) |
+| `internal/conv/` | Converters: SVG parse, nesting, `.wws` emit, and `.wws`→SVG |
 | `src/generate-square.js` | Proven write recipe / proof-of-concept generator |
 | `samples/square-100.known-good.wws` | Generated file **confirmed to open in MakeIt!** |
 | `samples/square-test.original.wws` | Hand-made reference file (generation template) |
@@ -83,6 +93,7 @@ color in `layerDataList`. Red `#E61F19` = cut. Target `version: "3.0.4"`. See
 - [x] Reverse-engineered format reference
 - [x] Proof-of-concept square generator
 - [x] SVG → `.wws` converter with true-polygon nesting onto multiple sheets (`svg2wws`)
+- [x] `.wws` → SVG converter, batch over a folder, one SVG per canvas (`wws2svg`)
 - [ ] Confirm a converter output opens in MakeIt! (pending hardware test)
 - [ ] Multi-layer cut + engrave, raster image engrave, text
 - [ ] Verify the exact SVG-unit → mm import rule

@@ -160,3 +160,58 @@ func TestNestNoOverlapAndSpacing(t *testing.T) {
 }
 
 func approx(a, b float64) bool { return math.Abs(a-b) < 1e-6 }
+
+// --- wws -> svg transform validation ---
+
+// With angle 0 (any flip), an object's transformed geometry must span exactly
+// its Fabric AABB: [left, left+width*scaleX] x [top, top+height*scaleY].
+func TestFabricAABBAngle0Flip(t *testing.T) {
+	o := map[string]any{"type": "rect", "width": 40.0, "height": 20.0,
+		"left": 10.0, "top": 5.0, "scaleX": 2.0, "scaleY": 3.0, "flipX": true}
+	em := ownMatrix(o).Mul(Translate(-20, -10))
+	bb := emptyRect()
+	for _, c := range [][2]float64{{0, 0}, {40, 0}, {40, 20}, {0, 20}} {
+		bb.add(em.Apply(Point{c[0], c[1]}))
+	}
+	for _, pair := range [][2]float64{{bb.MinX, 10}, {bb.MinY, 5}, {bb.MaxX, 90}, {bb.MaxY, 65}} {
+		if !approx(pair[0], pair[1]) {
+			t.Fatalf("AABB mismatch: got %+v want [10,90]x[5,65]", bb)
+		}
+	}
+}
+
+// Rotation is about the origin point, so the origin corner maps to (left,top)
+// regardless of angle/scale, and affine scaling preserves edge lengths.
+func TestFabricRotationOrigin(t *testing.T) {
+	o := map[string]any{"type": "rect", "width": 40.0, "height": 20.0,
+		"left": 10.0, "top": 5.0, "scaleX": 2.0, "scaleY": 1.5, "angle": 37.0}
+	em := ownMatrix(o).Mul(Translate(-20, -10))
+	p00 := em.Apply(Point{0, 0})
+	if !approx(p00.X, 10) || !approx(p00.Y, 5) {
+		t.Fatalf("origin corner = %+v, want (10,5)", p00)
+	}
+	pw := em.Apply(Point{40, 0})
+	ph := em.Apply(Point{0, 20})
+	if d := math.Hypot(pw.X-p00.X, pw.Y-p00.Y); !approx(d, 80) {
+		t.Fatalf("width edge = %.4f, want 80", d)
+	}
+	if d := math.Hypot(ph.X-p00.X, ph.Y-p00.Y); !approx(d, 30) {
+		t.Fatalf("height edge = %.4f, want 30", d)
+	}
+}
+
+// A grouped child composes through the group matrix: its origin corner lands
+// where the group transform maps the child's (left,top) in group space.
+func TestFabricGroupCompose(t *testing.T) {
+	g := map[string]any{"type": "group", "width": 100.0, "height": 80.0,
+		"left": 50.0, "top": 40.0, "angle": 20.0}
+	gown := ownMatrix(g)
+	child := map[string]any{"type": "rect", "width": 10.0, "height": 10.0,
+		"left": -30.0, "top": -20.0, "originX": "center", "originY": "center"}
+	childEM := gown.Mul(ownMatrix(child)).Mul(Translate(-5, -5))
+	got := childEM.Apply(Point{5, 5}) // center of the rect, origin=center
+	want := gown.Apply(Point{-30, -20})
+	if !approx(got.X, want.X) || !approx(got.Y, want.Y) {
+		t.Fatalf("group-composed centre = %+v, want %+v", got, want)
+	}
+}

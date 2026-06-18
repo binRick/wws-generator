@@ -2,5 +2,6 @@ node_modules/
 *.log
 .DS_Store
 
-# compiled Go binary (built with `go build -o svg2wws ./cmd/svg2wws`)
+# compiled Go binaries
 /svg2wws
+/wws2svg
