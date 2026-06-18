@@ -1,0 +1,133 @@
+{
+  "name": "square-test",
+  "version": "3.0.4",
+  "projectId": "project-62c96d87-bad9-40af-ab1a-3b21908aead0",
+  "canvasList": [
+    {
+      "id": "canvas-83835aa7-8169-46af-8bb3-1b012d517778",
+      "name": "canvas01",
+      "color": "#ffff00",
+      "objects": [
+        {
+          "type": "rect",
+          "version": "5.3.0",
+          "originX": "left",
+          "originY": "top",
+          "left": 82.94,
+          "top": 49.87,
+          "width": 97.2757881848791,
+          "height": 94.70462197734923,
+          "fill": "",
+          "stroke": "#E61F19",
+          "strokeWidth": 0,
+          "strokeDashArray": null,
+          "strokeLineCap": "butt",
+          "strokeDashOffset": 0,
+          "strokeLineJoin": "miter",
+          "strokeUniform": true,
+          "strokeMiterLimit": 4,
+          "scaleX": 1.028005034612964,
+          "scaleY": 1.0559146735617326,
+          "angle": 0,
+          "flipX": false,
+          "flipY": false,
+          "opacity": 1,
+          "shadow": null,
+          "visible": true,
+          "backgroundColor": "",
+          "fillRule": "nonzero",
+          "paintFirst": "fill",
+          "globalCompositeOperation": "source-over",
+          "skewX": 0,
+          "skewY": 0,
+          "rx": 0,
+          "ry": 0,
+          "id": "el-5e9ef2ff-be44-4bc4-8d86-dfca59f9e4c8",
+          "name": "element",
+          "hasControls": true,
+          "isLock": false,
+          "originStroke": "#FFA500",
+          "originStrokeForCut": "#E61F19",
+          "sequence": 1,
+          "processMode": "cut",
+          "fixed": false,
+          "selectable": true
+        }
+      ],
+      "workModeData": {
+        "canvasID": "canvas-83835aa7-8169-46af-8bb3-1b012d517778",
+        "perimeter": 314.16,
+        "diameter": 100,
+        "workMode": "plane",
+        "pathPlanning": "AUTO_MERGE",
+        "backgroundImage": null,
+        "baseplateDistance": 0,
+        "scanMode": "SCAN_ONE_WAY"
+      }
+    }
+  ],
+  "processList": {
+    "el-5e9ef2ff-be44-4bc4-8d86-dfca59f9e4c8": {
+      "cut": {
+        "power": 0,
+        "speed": 2,
+        "repeat": 1
+      },
+      "engrave": {
+        "power": 0,
+        "speed": 2,
+        "repeat": 1
+      },
+      "fillEngrave": {
+        "power": 0,
+        "speed": 2,
+        "repeat": 1
+      },
+      "processMode": "cut",
+      "isLock": false,
+      "strengthCutting": false,
+      "oneWayScan": true,
+      "lineDesity": 100,
+      "dpi": 254,
+      "dotDuration": 230,
+      "breakPointObj": {
+        "breakPointNum": 2,
+        "breakPointSize": 0.4,
+        "isBreakPoint": false,
+        "isAutoBreakPoint": true
+      },
+      "processAngle": 0,
+      "fixed": false,
+      "radius": 0
+    }
+  },
+  "time": 1781744744637,
+  "currentCanvasId": "canvas-83835aa7-8169-46af-8bb3-1b012d517778",
+  "cover": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAN...[truncated base64 PNG thumbnail]",
+  "layerDataList": [
+    {
+      "id": "canvas-83835aa7-8169-46af-8bb3-1b012d517778",
+      "data": [
+        {
+          "type": "color",
+          "id": "#E61F19",
+          "color": "#E61F19",
+          "selected": false,
+          "show": true,
+          "fixed": false
+        },
+        {
+          "id": "el-5e9ef2ff-be44-4bc4-8d86-dfca59f9e4c8",
+          "parentGroupID": "",
+          "base64": "",
+          "type": "shape",
+          "name": "editor.color_layer.rect",
+          "color": "#E61F19",
+          "selected": false,
+          "show": true,
+          "fixed": false
+        }
+      ]
+    }
+  ]
+}
