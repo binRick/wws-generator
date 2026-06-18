@@ -53,6 +53,17 @@ reverse-engineered format reference.
 - **Validated** across a 339-file / 1604-canvas library: 1553 well-formed SVGs;
   un-rotated bounds match Fabric AABBs to < 0.03 mm.
 
+### `wws2json` — `.wws` → detailed JSON (drive a web renderer)
+
+- **Complete, renderable decode.** Per canvas, every object as: SVG-equivalent
+  `type`, a `transform` matrix to canvas mm, local `geometry`, canvas-space `bbox`,
+  `style`, decoded **laser** settings (operation, power %, speed, passes, ignored,
+  line density, DPI), and `groupPath`.
+- **Material thickness** surfaced where the file records it (sheet size isn't stored
+  by MakeIt!). Single file → stdout, or batch a directory; `--strip-images` for
+  lean output. Schema in [`docs/wws2json.md`](docs/wws2json.md).
+- **Validated**: every file in the 339-file library produces valid JSON.
+
 ### Also
 
 - **Format reference** — [`docs/wws-format.md`](docs/wws-format.md) documents the
@@ -82,6 +93,15 @@ folder:
 go build -o wws2svg ./cmd/wws2svg
 ./wws2svg --in design.wws --out ./svgs
 ./wws2svg --in ~/Desktop/cups/WWS --out ./svgs   # batch a directory
+```
+
+Or `.wws` → **detailed JSON** (geometry + transforms + style + decoded laser
+settings) to drive a web renderer or inspect a design:
+
+```bash
+go build -o wws2json ./cmd/wws2json
+./wws2json --in design.wws                       # JSON to stdout
+./wws2json --in ~/Desktop/cups/WWS --out ./json  # batch a directory
 ```
 
 Or just generate a plain cut square (the original proof-of-concept):
@@ -116,12 +136,13 @@ clear space around it); reposition it on the bed inside MakeIt!. See
 | [`docs/wws-format.md`](docs/wws-format.md) | Full reverse-engineered `.wws` format spec |
 | [`docs/svg2wws.md`](docs/svg2wws.md) | SVG → `.wws` converter: pipeline, nesting, limits |
 | [`docs/wws2svg.md`](docs/wws2svg.md) | `.wws` → SVG converter (reverse): transforms, batch, limits |
+| [`docs/wws2json.md`](docs/wws2json.md) | `.wws` → detailed JSON: schema for a web renderer |
 | [`docs/svg2wws-agent.md`](docs/svg2wws-agent.md) | Using `svg2wws` from another repo (CLI contract for AI agents) |
 | [`docs/svg2wws-internals.md`](docs/svg2wws-internals.md) | Converter architecture & implementation deep-dive |
 | [`docs/TESTPLAN.md`](docs/TESTPLAN.md) | Test plan + feature→test coverage map |
 | [`CLAUDE.md`](CLAUDE.md) | Orientation for AI sessions (read first) |
-| `cmd/svg2wws/`, `cmd/wws2svg/` | CLI entry points (SVG→.wws and .wws→SVG) |
-| `internal/conv/` | Converters: SVG parse, nesting, `.wws` emit, and `.wws`→SVG |
+| `cmd/svg2wws/`, `cmd/wws2svg/`, `cmd/wws2json/` | CLI entry points |
+| `internal/conv/` | Converters: SVG parse, nesting, `.wws` emit, `.wws`→SVG, `.wws`→JSON |
 | `scripts/test.sh` | Pre-push test runner (build, unit/e2e, CLI smoke, library sweep) |
 | `src/generate-square.js` | Proven write recipe / proof-of-concept generator |
 | `samples/square-100.known-good.wws` | Generated file **confirmed to open in MakeIt!** |
@@ -157,6 +178,7 @@ See [`docs/TESTPLAN.md`](docs/TESTPLAN.md) for the feature→test coverage map.
 - [x] Proof-of-concept square generator
 - [x] SVG → `.wws` converter with true-polygon nesting onto multiple sheets (`svg2wws`)
 - [x] `.wws` → SVG converter, batch over a folder, one SVG per canvas (`wws2svg`)
+- [x] `.wws` → detailed JSON (geometry + transforms + laser settings) for web rendering (`wws2json`)
 - [ ] Confirm a converter output opens in MakeIt! (pending hardware test)
 - [ ] Multi-layer cut + engrave, raster image engrave, text
 - [ ] Verify the exact SVG-unit → mm import rule

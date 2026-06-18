@@ -19,6 +19,7 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 SVG2WWS="$TMP/svg2wws"
 WWS2SVG="$TMP/wws2svg"
+WWS2JSON="$TMP/wws2json"
 
 # ---------------------------------------------------------------- static checks
 step "gofmt (formatting)"
@@ -33,6 +34,7 @@ echo "  ok"
 step "go build (both binaries)"
 go build -o "$SVG2WWS" ./cmd/svg2wws
 go build -o "$WWS2SVG" ./cmd/wws2svg
+go build -o "$WWS2JSON" ./cmd/wws2json
 echo "  ok"
 
 # --------------------------------------------------- unit + end-to-end go tests
@@ -68,6 +70,14 @@ ls "$TMP/svg"/*.svg >/dev/null 2>&1 || fail "no SVG written"
 grep -q "<svg" "$TMP/svg/"*.svg || fail "output is not an SVG"
 echo "  ok"
 
+step "wws2json: convert a sample .wws to detailed JSON"
+"$WWS2JSON" --in samples/square-100.known-good.wws --out "$TMP/s.json" >/dev/null
+grep -q '"units"' "$TMP/s.json" || fail "JSON missing expected fields"
+if command -v python3 >/dev/null 2>&1; then
+  python3 -c "import json,sys; json.load(open('$TMP/s.json'))" || fail "invalid JSON"
+fi
+echo "  ok"
+
 # --------------------------------------------- optional: full real-library sweep
 WWS_LIB="${WWS_LIB:-$HOME/Desktop/cups/WWS}"
 if [ -d "$WWS_LIB" ]; then
@@ -86,6 +96,25 @@ for f in glob.glob(os.path.join(d,"*.svg")):
     try: ET.parse(f)
     except Exception as e: bad+=1; print("  malformed:", os.path.basename(f), e)
 print(f"  parsed {n} SVGs, malformed: {bad}")
+sys.exit(1 if bad else 0)
+PY
+  fi
+
+  step "wws2json: batch sweep of $WWS_LIB"
+  jsweep="$TMP/jsweep"
+  jres="$("$WWS2JSON" --in "$WWS_LIB" --out "$jsweep" --strip-images)"
+  echo "  $jres"
+  echo "$jres" | grep -q "failed" && fail "some files failed to convert to JSON"
+  if command -v python3 >/dev/null 2>&1; then
+    step "validate swept JSON parses"
+    python3 - "$jsweep" <<'PY'
+import sys, glob, os, json
+d=sys.argv[1]; bad=0; n=0
+for f in glob.glob(os.path.join(d,"*.json")):
+    n+=1
+    try: json.load(open(f))
+    except Exception as e: bad+=1; print("  invalid:", os.path.basename(f), e)
+print(f"  parsed {n} JSON files, invalid: {bad}")
 sys.exit(1 if bad else 0)
 PY
   fi

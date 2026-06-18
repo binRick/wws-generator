@@ -23,7 +23,8 @@ sweeps the whole library and checks every SVG is well-formed.
 | Unit + e2e | `go test ./...` | the test matrix below |
 | svg2wws smoke | CLI runs | default, rotation/grid variants, spill, oversized-error |
 | wws2svg smoke | CLI runs | sample converts to a valid SVG |
-| Library sweep (optional) | CLI batch | all real files convert; every SVG is well-formed XML |
+| wws2json smoke | CLI runs | sample converts to valid JSON with expected fields |
+| Library sweep (optional) | CLI batch | all real files convert; every SVG is well-formed XML and every JSON parses |
 
 ## Feature → test coverage
 
@@ -52,6 +53,15 @@ sweeps the whole library and checks every SVG is well-formed.
 | End-to-end: one canvas → one SVG, right element + object count | `TestWWSToSVGsSample` |
 | Batch over a directory; well-formed XML for every file | `scripts/test.sh` (library sweep) |
 | No geometry dropped (incl. inside groups) | library sweep + element-count parity (manual) |
+
+### `wws2json` (`.wws` → detailed JSON)
+
+| Feature | Test |
+| --- | --- |
+| Decode: types, transform, geometry, bbox, style, laser, material | `TestDescribeSample` |
+| Generated file decodes to cut paths with geometry + valid laser | `TestDescribeGenerated` |
+| CLI emits valid JSON with expected fields | `scripts/test.sh` (smoke) |
+| Batch over a directory; every file produces valid JSON | `scripts/test.sh` (library sweep) |
 
 ### Round trip
 

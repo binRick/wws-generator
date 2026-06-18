@@ -107,7 +107,7 @@ func emitObject(o map[string]any, parent Matrix, b *strings.Builder, bb *Rect) i
 
 	case "rect":
 		w, h := jnum(o, "width", 0), jnum(o, "height", 0)
-		em := full.Mul(Translate(-w/2, -h/2))
+		em := leafTransform(o, full)
 		rx, ry := jnum(o, "rx", 0), jnum(o, "ry", 0)
 		extra := ""
 		if rx > 0 || ry > 0 {
@@ -146,8 +146,7 @@ func emitObject(o map[string]any, parent Matrix, b *strings.Builder, bb *Rect) i
 		if len(pts) == 0 {
 			return 0
 		}
-		ox, oy := centerOf(pts)
-		em := full.Mul(Translate(-ox, -oy))
+		em := leafTransform(o, full)
 		var ps strings.Builder
 		for i, p := range pts {
 			if i > 0 {
@@ -165,9 +164,7 @@ func emitObject(o map[string]any, parent Matrix, b *strings.Builder, bb *Rect) i
 		if len(sps) == 0 {
 			return 0
 		}
-		r := subpathsBBox(sps)
-		ox, oy := r.MinX+r.W()/2, r.MinY+r.H()/2
-		em := full.Mul(Translate(-ox, -oy))
+		em := leafTransform(o, full)
 		fmt.Fprintf(b, `  <path d="%s" %s %s/>`+"\n",
 			subpathsToD(sps), styleAttrs(o, false), matrixAttr(em))
 		for _, sp := range sps {
@@ -183,7 +180,7 @@ func emitObject(o map[string]any, parent Matrix, b *strings.Builder, bb *Rect) i
 		if src == "" {
 			return 0
 		}
-		em := full.Mul(Translate(-w/2, -h/2))
+		em := leafTransform(o, full)
 		fmt.Fprintf(b, `  <image x="0" y="0" width="%s" height="%s" xlink:href="%s" %s/>`+"\n",
 			fmtNum(w), fmtNum(h), xmlEscape(src), matrixAttr(em))
 		addCorners(bb, em, w, h)
@@ -198,13 +195,42 @@ func emitObject(o map[string]any, parent Matrix, b *strings.Builder, bb *Rect) i
 		if fill == "" {
 			fill = "#000000"
 		}
-		em := full.Mul(Translate(-w/2, -h/2))
+		em := leafTransform(o, full)
 		fmt.Fprintf(b, `  <text x="0" y="%s" font-family="%s" font-size="%s" fill="%s" %s>%s</text>`+"\n",
 			fmtNum(fs), xmlEscape(fam), fmtNum(fs), fill, matrixAttr(em), xmlEscape(txt))
 		addCorners(bb, em, w, h)
 		return 1
 	}
 	return 0
+}
+
+// contentOffset returns the offset that centres an object's raw local geometry,
+// matching Fabric's per-type render origin. circle/ellipse/line are drawn centred
+// at the origin (offset 0); rect/image/text from their top-left; path/polygon from
+// their geometry's bbox centre.
+func contentOffset(o map[string]any) (float64, float64) {
+	switch strings.ToLower(jstr(o, "type", "")) {
+	case "rect", "image", "i-text", "text", "textbox":
+		return jnum(o, "width", 0) / 2, jnum(o, "height", 0) / 2
+	case "polygon", "polyline":
+		pts := parsePointObjs(o["points"])
+		if len(pts) == 0 {
+			return 0, 0
+		}
+		return centerOf(pts)
+	case "path":
+		r := subpathsBBox(parseWWSPath(o["path"]))
+		return r.MinX + r.W()/2, r.MinY + r.H()/2
+	default:
+		return 0, 0
+	}
+}
+
+// leafTransform maps an object's raw local geometry to its parent canvas frame
+// (full object matrix composed with the content-centering offset).
+func leafTransform(o map[string]any, full Matrix) Matrix {
+	ox, oy := contentOffset(o)
+	return full.Mul(Translate(-ox, -oy))
 }
 
 // ownMatrix replicates Fabric's calcOwnMatrix: maps the object's centred content

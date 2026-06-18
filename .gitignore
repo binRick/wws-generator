@@ -5,3 +5,4 @@ node_modules/
 # compiled Go binaries
 /svg2wws
 /wws2svg
+/wws2json

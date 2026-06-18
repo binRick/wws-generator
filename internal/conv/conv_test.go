@@ -164,6 +164,70 @@ func TestNestNoOverlapAndSpacing(t *testing.T) {
 
 func approx(a, b float64) bool { return math.Abs(a-b) < 1e-6 }
 
+// --- wws -> detailed json ---
+
+func TestDescribeSample(t *testing.T) {
+	data, err := os.ReadFile(sampleWWS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Describe(data, DescribeOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Version != "3.0.4" || p.Units != "mm" {
+		t.Fatalf("version/units = %q/%q", p.Version, p.Units)
+	}
+	if len(p.Canvases) != 1 || len(p.Canvases[0].Items) != 1 {
+		t.Fatalf("want 1 canvas / 1 item, got %d / %v", len(p.Canvases), p.Canvases)
+	}
+	it := p.Canvases[0].Items[0]
+	if it.Type != "rect" {
+		t.Fatalf("item type = %q, want rect", it.Type)
+	}
+	if it.Laser == nil || it.Laser.Operation != "cut" {
+		t.Fatalf("laser = %+v, want operation cut", it.Laser)
+	}
+	if it.Style.Stroke != "#E61F19" {
+		t.Fatalf("stroke = %q, want #E61F19", it.Style.Stroke)
+	}
+	if it.BBox == nil {
+		t.Fatal("item bbox missing")
+	}
+	// Output must be valid JSON.
+	if _, err := p.ToJSON(false); err != nil {
+		t.Fatalf("ToJSON: %v", err)
+	}
+}
+
+// A generated file (svg2wws) decoded back to JSON should expose every piece as a
+// cut path with geometry and a transform.
+func TestDescribeGenerated(t *testing.T) {
+	out, _ := convertSample(t, 300, 200, 3) // 5 pieces, one canvas
+	p, err := Describe(out, DescribeOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Canvases) != 1 || len(p.Canvases[0].Items) != 5 {
+		t.Fatalf("want 1 canvas / 5 items, got %d canvases", len(p.Canvases))
+	}
+	for _, it := range p.Canvases[0].Items {
+		if it.Type != "path" {
+			t.Fatalf("item type = %q, want path", it.Type)
+		}
+		if _, ok := it.Geometry["d"].(string); !ok {
+			t.Fatalf("path item missing geometry.d: %+v", it.Geometry)
+		}
+		if it.Laser == nil || it.Laser.Operation != "cut" {
+			t.Fatalf("laser = %+v, want cut", it.Laser)
+		}
+		if it.BBox == nil || it.BBox.X < -0.5 || it.BBox.Y < -0.5 ||
+			it.BBox.X+it.BBox.W > 300.5 || it.BBox.Y+it.BBox.H > 200.5 {
+			t.Fatalf("item bbox out of material: %+v", it.BBox)
+		}
+	}
+}
+
 // --- end-to-end: svg -> wws (uses the in-repo sample) ---
 
 const sampleSVG = "../../samples/test-parts.svg"

@@ -84,6 +84,19 @@ AABB matches Fabric to <0.03mm for un-rotated files; rotation/flip/group covered
 tests). Text is approximate (no font embedding); it's geometry-faithful, not a byte
 round-trip (laser settings/layers are dropped).
 
+## WWS → detailed JSON (built — `wws2json`)
+
+`cmd/wws2json` (CLI) + `internal/conv/wwsjson.go` (`Describe`); schema in
+**`docs/wws2json.md`**. Build: `go build -o wws2json ./cmd/wws2json`. Decodes a `.wws`
+into a renderable JSON model: per canvas, every object as type + `transform` matrix to
+canvas mm + local `geometry` + canvas `bbox` + `style` + decoded `laser` (operation,
+power/speed/passes per mode, ignored, lineDensity, dpi) + `groupPath`; plus per-canvas
+material thickness where recorded. Reuses `ownMatrix`/`leafTransform` (shared with the
+SVG emitter, so they can't diverge). Cut-settings live in top-level `processList` keyed
+by object id; material thickness in `canvasParamsListArray[i].materThickness`; **sheet
+width/height is not stored** in a `.wws`. Single file → stdout; directory → batch;
+`--strip-images`/`--compact`. Validated: all 339 library files produce valid JSON.
+
 ### Next directions (not yet built)
 
 - Verify converter output opens in MakeIt!; confirm the exact SVG-unit→mm import rule.
