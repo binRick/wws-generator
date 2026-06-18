@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rapidvps/wws-generator/internal/conv"
+	"github.com/binRick/wws-generator/internal/conv"
 )
 
 func main() {

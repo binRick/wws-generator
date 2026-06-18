@@ -12,7 +12,7 @@ closed shapes onto one or more material sheets (each sheet → one MakeIt! canva
 | | |
 | --- | --- |
 | Repo | `/Users/richardblundell/repos/wws-generator` |
-| Go module | `github.com/rapidvps/wws-generator` |
+| Go module | `github.com/binRick/wws-generator` |
 | CLI source | `<repo>/cmd/svg2wws` |
 | Built binary (gitignored) | `/Users/richardblundell/repos/wws-generator/svg2wws` |
 | Format spec | `<repo>/docs/wws-format.md` |
