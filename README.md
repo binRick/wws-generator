@@ -12,6 +12,55 @@ WeCreat markets `.wws` as a proprietary, no-export format. But under the hood a
 **Confirmed:** a `.wws` file built by this repo opens correctly in MakeIt! as a
 100×100 mm cut square — see [`samples/square-100.known-good.wws`](samples/square-100.known-good.wws).
 
+## Features
+
+Two single-file Go binaries (standard library only — no dependencies), plus the
+reverse-engineered format reference.
+
+### `svg2wws` — SVG → `.wws` (with nesting)
+
+- **True-polygon nesting.** Packs each part by its *real filled footprint* (not its
+  bounding box), so concave/irregular parts interlock tightly.
+- **Free rotation.** Tries multiple orientations per part; `--rotations` takes a
+  count of evenly-spaced angles or an explicit degree list (`1` = none, `4` = 90°
+  steps for grain direction).
+- **Hole-aware.** A loop inside another becomes a *hole* that stays attached to its
+  parent part, and small parts can nest **inside** a larger part's hole (free space).
+- **Multi-sheet spill.** Parts that don't fit roll onto additional sheets — each
+  sheet is emitted as its own MakeIt! **canvas**.
+- **One "space around items" knob** (`--spacing`, default 3 mm): the gap between
+  parts *and* the border around the whole layout. The layout is **anchored
+  top-left** — reposition it on the bed in MakeIt!.
+- **Full SVG geometry in.** `<path>`, `<rect>` (incl. rounded), `<circle>`,
+  `<ellipse>`, `<line>`, `<polyline>`, `<polygon>`, nested `<g transform>`; every
+  path command (relative, `H/V`, smooth `S/T`, arcs `A`) is simplified to
+  `M/L/C/Q/Z`. Units → millimetres (1 user unit = 1 mm, or honour explicit
+  `mm/cm/in` + `viewBox`; override with `--scale`).
+- **Faithful output.** v3.0.4 envelope, exact-vector cut paths (red `#E61F19`,
+  `processMode: cut`), a rendered PNG thumbnail, and a hard error if a single part
+  is larger than the sheet.
+
+### `wws2svg` — `.wws` → SVG (reverse)
+
+- **One SVG per canvas**, geometry in millimetres, stroke/fill colours preserved.
+- **Faithful Fabric transforms.** Replicates Fabric's `calcOwnMatrix`
+  (origin/scale/angle/flip/skew) and composes nested **group** transforms; each
+  object is emitted as the matching SVG element with a `transform="matrix(...)"`.
+- **Every object type:** path, rect, circle, ellipse, line, polyline, polygon,
+  image (embedded), text (approximate), group.
+- **Single file or batch a whole folder**; multi-canvas files become
+  `<name>-canvas01.svg`, `<name>-canvas02.svg`, …
+- **Validated** across a 339-file / 1604-canvas library: 1553 well-formed SVGs;
+  un-rotated bounds match Fabric AABBs to < 0.03 mm.
+
+### Also
+
+- **Format reference** — [`docs/wws-format.md`](docs/wws-format.md) documents the
+  whole `.wws` schema (Fabric objects, `path` arrays, `processList`,
+  `layerDataList`, units, colours, version differences).
+- **Square generator** — `src/generate-square.js`, the original proof that `.wws`
+  is writable.
+
 ## Quick start
 
 ```bash
