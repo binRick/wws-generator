@@ -24,7 +24,6 @@ type flags struct {
 	in        string
 	out       string
 	material  string
-	margin    float64
 	spacing   float64
 	grid      float64
 	rotations string
@@ -36,7 +35,6 @@ type flags struct {
 
 func run(args []string) error {
 	f := flags{
-		margin:    5,
 		spacing:   3,
 		grid:      1.0,
 		rotations: "8",
@@ -83,7 +81,6 @@ func run(args []string) error {
 		Name:      name,
 		MaterialW: mw,
 		MaterialH: mh,
-		Margin:    f.margin,
 		Spacing:   f.spacing,
 		Grid:      f.grid,
 		Rotations: rots,
@@ -102,9 +99,9 @@ func run(args []string) error {
 	fmt.Printf("Wrote %s\n", out)
 	fmt.Printf("  %d piece(s) nested onto %d sheet(s) of %.0fx%.0f mm (%d bytes)\n",
 		sum.Pieces, sum.Sheets, mw, mh, sum.Bytes)
-	fmt.Printf("  spacing %.1f mm, margin %.1f mm, grid %.2f mm, %d rotations\n",
-		f.spacing, f.margin, f.grid, len(rots))
-	fmt.Printf("  Open in MakeIt! to verify dimensions and cut.\n")
+	fmt.Printf("  %.1f mm space around items, grid %.2f mm, %d rotations; layout anchored top-left\n",
+		f.spacing, f.grid, len(rots))
+	fmt.Printf("  Open in MakeIt! to verify dimensions and cut (reposition on the bed as needed).\n")
 	return nil
 }
 
@@ -188,8 +185,6 @@ func (fs *flagSet) parse(args []string) error {
 			f.out, err = next()
 		case "--material":
 			f.material, err = next()
-		case "--margin":
-			err = setFloat(next, &f.margin)
 		case "--spacing":
 			err = setFloat(next, &f.spacing)
 		case "--grid":
@@ -253,8 +248,8 @@ Required:
 Options:
   --out FILE         output .wws (default: <input>.wws)
   --name NAME        project name shown in MakeIt! (default: output base name)
-  --margin MM        clearance from the sheet edge (default 5)
-  --spacing MM       minimum gap between pieces (default 3)
+  --spacing MM       space around items: gap between pieces and the border around
+                     the whole layout (default 3)
   --grid MM          nesting resolution; smaller = tighter but slower (default 1.0)
   --rotations N|list rotation candidates: a count for N evenly-spaced angles,
                      or a comma list of degrees (default 8)
@@ -263,7 +258,8 @@ Options:
   --speed N          cut speed (default 5)
 
 Pieces are nested with true polygon footprints; parts that don't fit spill onto
-additional sheets, each emitted as its own canvas. A piece larger than one sheet
-is an error.
+additional sheets, each emitted as its own canvas. The layout is anchored at the
+canvas top-left — reposition it on the bed in MakeIt!. A piece larger than one
+sheet is an error.
 `)
 }

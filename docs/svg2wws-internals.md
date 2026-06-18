@@ -104,10 +104,11 @@ clearance is Chebyshev ≥ Euclidean ⇒ at least `spacing`).
 and mark half-open `[x0,x1)` ranges with word masks.
 
 **Placement test** (`sheetGrid.fits`): the *undilated* footprint must lie inside
-the usable grid (sheet inset by `--margin`); the *dilated* footprint must not
-collide with occupancy. Two separate tests keep edge clearance = margin while
-inter-piece clearance = spacing. After placing, occupancy is marked with the
-*undilated* spans only — so the next piece's dilation creates the gap.
+the usable grid (the sheet inset by `--spacing` on every side); the *dilated*
+footprint must not collide with occupancy. The single `--spacing` value thus
+serves as both the layout border (via the inset) and the inter-piece gap (via the
+dilation). After placing, occupancy is marked with the *undilated* spans only — so
+the next piece's dilation creates the gap.
 
 **Search** (`findSpot` + `bestOnSheet`): scan `py` ascending, `px` ascending,
 return the first fit (top-left first-fit). Across all `--rotations` masks, pick
@@ -116,7 +117,7 @@ on existing sheets in order; if none fits, a new sheet (canvas) is opened. If a
 piece doesn't fit on an **empty** sheet → oversized **error** (exit 1).
 
 **Placement matrix** (`mkPlacement`). A point `p` maps to sheet mm as
-`R(deg)·p + t`, where `t = (margin + px·res − ox, margin + py·res − oy)` and
+`R(deg)·p + t`, where `t = (spacing + px·res − ox, spacing + py·res − oy)` and
 `(ox,oy)` is the rotated footprint min the mask recorded. So `M = Translate(t) ·
 RotateDeg(deg)`. The exact subpaths are later transformed by this same `M`, so
 vector geometry coincides with the rasterised placement.
@@ -148,8 +149,10 @@ sheet 1 (`cover.go`, Bresenham outlines, white bg). Output is compact JSON,
 
 SVG is y-down, top-left origin; MakeIt!'s canvas is the same orientation
 (verified samples store positive top-left mm). **No Y flip** is applied — pieces
-keep their drawn orientation (modulo nesting rotation). Sheet origin is the bed
-top-left; pieces start at `--margin`.
+keep their drawn orientation (modulo nesting rotation). The tool does not position
+the material on the bed: the layout is anchored at the canvas top-left (the
+top-left piece sits at `(spacing, spacing)`) and the user repositions it in
+MakeIt!.
 
 ## Performance & tuning
 

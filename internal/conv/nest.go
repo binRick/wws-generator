@@ -9,8 +9,7 @@ import (
 type NestOptions struct {
 	MaterialW float64
 	MaterialH float64
-	Margin    float64   // clearance from sheet edge
-	Spacing   float64   // minimum gap between pieces
+	Spacing   float64   // space around items: gap between pieces AND border inset
 	Grid      float64   // raster resolution (mm per cell)
 	Rotations []float64 // candidate rotation angles in degrees
 }
@@ -84,11 +83,13 @@ func (s *sheetGrid) findSpot(m *mask) (int, int, bool) {
 // too large to fit on an empty sheet.
 func Nest(pieces []Piece, opt NestOptions) ([]Placement, int, error) {
 	res := opt.Grid
-	usableW := opt.MaterialW - 2*opt.Margin
-	usableH := opt.MaterialH - 2*opt.Margin
+	// Items get `Spacing` of clear space on every side, so the usable nesting
+	// area is the sheet inset by that border; the layout is anchored top-left.
+	usableW := opt.MaterialW - 2*opt.Spacing
+	usableH := opt.MaterialH - 2*opt.Spacing
 	if usableW <= 0 || usableH <= 0 {
-		return nil, 0, fmt.Errorf("material %.1fx%.1f mm too small for margin %.1f mm",
-			opt.MaterialW, opt.MaterialH, opt.Margin)
+		return nil, 0, fmt.Errorf("material %.1fx%.1f mm too small for %.1f mm space around items",
+			opt.MaterialW, opt.MaterialH, opt.Spacing)
 	}
 	gw := int(math.Floor(usableW / res))
 	gh := int(math.Floor(usableH / res))
@@ -132,8 +133,8 @@ func Nest(pieces []Piece, opt NestOptions) ([]Placement, int, error) {
 		bestRot, px, py, ok := bestOnSheet(sg, masks)
 		if !ok {
 			eff := p.BBox
-			return nil, 0, fmt.Errorf("piece is %.1fx%.1f mm and does not fit on a %.1fx%.1f mm sheet (usable %.1fx%.1f after margin); enlarge --material or reduce --margin/--spacing",
-				eff.W(), eff.H(), opt.MaterialW, opt.MaterialH, usableW, usableH)
+			return nil, 0, fmt.Errorf("piece is %.1fx%.1f mm and does not fit on a %.1fx%.1f mm sheet (usable %.1fx%.1f after %.1f mm spacing); enlarge --material or reduce --spacing",
+				eff.W(), eff.H(), opt.MaterialW, opt.MaterialH, usableW, usableH, opt.Spacing)
 		}
 		sg.place(masks[bestRot], px, py)
 		sheets = append(sheets, sg)
@@ -162,8 +163,8 @@ func bestOnSheet(s *sheetGrid, masks []*mask) (rot, bx, by int, ok bool) {
 }
 
 func mkPlacement(p *Piece, sheet int, deg float64, m *mask, px, py int, opt NestOptions, res float64) Placement {
-	tx := opt.Margin + float64(px)*res - m.ox
-	ty := opt.Margin + float64(py)*res - m.oy
+	tx := opt.Spacing + float64(px)*res - m.ox
+	ty := opt.Spacing + float64(py)*res - m.oy
 	mat := Translate(tx, ty).Mul(RotateDeg(deg))
 	return Placement{Piece: p, Sheet: sheet, M: mat}
 }

@@ -31,14 +31,18 @@ go build -o svg2wws ./cmd/svg2wws
    immediate parent. So a ring (outer circle + inner circle) is one piece with a
    hole, and a small shape drawn inside a hole becomes its own piece.
 
-4. **Nest** (`nest.go`, `raster.go`). Each piece is **rasterised at its true
-   filled footprint** (even-odd fill, so holes are empty space), then placed with
-   a bottom-left/top-left first-fit heuristic, largest piece first. Pieces are
-   tried at several **rotations** and the lowest-resting orientation wins. The
-   footprint is dilated by `--spacing` for collision tests, so placed parts keep
-   their gap; occupancy is marked with the undilated footprint. Because nesting
-   uses the real polygon (not the bounding box), concave parts **interlock** and
-   a small part can drop into a larger part's hole.
+4. **Nest** (`nest.go`, `raster.go`). The sheet size comes from `--material`;
+   `--spacing` (default 3 mm) is the single "space around items" value — it's both
+   the gap between pieces and the border inset, so the usable nesting area is the
+   sheet shrunk by `--spacing` on every side and the layout is **anchored at the
+   canvas top-left**. Each piece is **rasterised at its true filled footprint**
+   (even-odd fill, so holes are empty space), then placed with a top-left
+   first-fit heuristic, largest piece first. Pieces are tried at several
+   **rotations** and the lowest-resting orientation wins. The footprint is dilated
+   by `--spacing` for collision tests, so placed parts keep their gap; occupancy
+   is marked with the undilated footprint. Because nesting uses the real polygon
+   (not the bounding box), concave parts **interlock** and a small part can drop
+   into a larger part's hole.
 
 5. **Emit `.wws`** (`wws.go`, `cover.go`). One canvas per sheet. Each piece's
    exact geometry is transformed into absolute-mm Fabric `path` command arrays
@@ -65,9 +69,12 @@ Trade-offs you can tune:
 
 ## Behaviour notes
 
+- **Position is top-left only.** The tool does not place the material on the bed
+  — it anchors the cut layout at the canvas top-left with `--spacing` of border.
+  Move it to wherever you want on the bed inside MakeIt!.
 - **Oversized parts error out.** If a single piece can't fit on an empty sheet
-  (after margin), conversion fails with the piece size vs sheet size — enlarge
-  `--material` or reduce `--margin`/`--spacing`. (Splitting one part across
+  (after the `--spacing` border), conversion fails with the piece size vs sheet
+  size — enlarge `--material` or reduce `--spacing`. (Splitting one part across
   sheets with joinery is intentionally out of scope.)
 - **Spacing is a floor, not exact.** Square dilation on the grid guarantees at
   least `--spacing` of clearance (often a hair more at coarse grids).

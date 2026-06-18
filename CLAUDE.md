@@ -54,11 +54,13 @@ another repo). Build: `go build -o svg2wws ./cmd/svg2wws`. Run:
 `./svg2wws --in design.svg --material 300x200`. It parses SVG (transforms + units →
 absolute mm, all commands simplified to `M/L/C/Q/Z`), groups subpaths into pieces by
 even/odd containment (outer + holes), **raster-nests** the true polygon footprints
-onto sheets (free rotation, ~3mm spacing, holes are free space, multi-sheet spill →
-one canvas per sheet), and emits the v3.0.4 envelope (coords baked absolute, scale 1,
-`left/top` = exact path bbox min). Tests: `go test ./...` (covers path simplify, arc,
-hole grouping, unit scale, no-overlap/spacing). Defaults: `--margin 5 --spacing 3
---grid 1.0 --rotations 8`; oversized single pieces error out.
+onto sheets (free rotation, holes are free space, multi-sheet spill → one canvas per
+sheet), and emits the v3.0.4 envelope (coords baked absolute, scale 1, `left/top` =
+exact path bbox min). `--spacing` (default 3mm) is the single "space around items"
+value — both the gap between pieces and the layout border; the layout is anchored at
+the canvas top-left (no bed positioning — the user moves it in MakeIt!). Tests: `go
+test ./...` (covers path simplify, arc, hole grouping, unit scale, no-overlap/spacing).
+Defaults: `--spacing 3 --grid 1.0 --rotations 8`; oversized single pieces error out.
 
 **Not yet hardware-verified** — outputs pass structural + no-overlap validation but no
 converter file has been confirmed to open in MakeIt!. Have the user test one.

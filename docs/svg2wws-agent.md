@@ -51,8 +51,7 @@ svg2wws --in <FILE.svg> --material <WxH> [options]
 | `--material WxH` | — (required) | sheet size in mm |
 | `--out FILE` | `<input>.wws` (cwd) | output `.wws` |
 | `--name NAME` | output base name | project name shown in MakeIt! |
-| `--margin MM` | `5` | clearance from sheet edge |
-| `--spacing MM` | `3` | minimum gap between pieces |
+| `--spacing MM` | `3` | space around items: gap between pieces **and** the border around the whole layout |
 | `--grid MM` | `1.0` | nesting resolution; smaller = tighter but slower |
 | `--rotations N\|list` | `8` | count of evenly-spaced angles, or a comma list of degrees. `1` = no rotation, `4` = 90° steps |
 | `--scale F` | auto | force user-unit → mm factor (default 1 unit = 1 mm) |
@@ -67,8 +66,8 @@ svg2wws --in <FILE.svg> --material <WxH> [options]
   ```
   Wrote /abs/out.wws
     5 piece(s) nested onto 2 sheet(s) of 120x120 mm (12294 bytes)
-    spacing 3.0 mm, margin 5.0 mm, grid 1.00 mm, 8 rotations
-    Open in MakeIt! to verify dimensions and cut.
+    3.0 mm space around items, grid 1.00 mm, 8 rotations; layout anchored top-left
+    Open in MakeIt! to verify dimensions and cut (reposition on the bed as needed).
   ```
   Parse `(\d+) piece.* onto (\d+) sheet` if you need the counts; otherwise just
   check exit code and that the output file exists.
@@ -94,11 +93,14 @@ svg2wws --in <FILE.svg> --material <WxH> [options]
 ## Guarantees & limits
 
 - Placed pieces **never overlap** and keep **at least `--spacing`** mm apart
-  (slightly more at coarse `--grid`). Concave parts interlock; small parts may
-  nest inside larger parts' holes. Emitted cut geometry is **exact vector** — only
-  the placement position/rotation is grid-quantised.
+  (slightly more at coarse `--grid`). The same `--spacing` is also the border
+  around the layout. Concave parts interlock; small parts may nest inside larger
+  parts' holes. Emitted cut geometry is **exact vector** — only the placement
+  position/rotation is grid-quantised.
+- The tool does **not** position the material on the bed: the layout is anchored
+  at the canvas top-left and the user repositions it in MakeIt!.
 - A single piece **larger than one sheet is a hard error** (exit 1). React by
-  raising `--material`, or lowering `--margin`/`--spacing`.
+  raising `--material` or lowering `--spacing`.
 - Nesting is a greedy heuristic (not globally optimal). Higher `--rotations` and
   smaller `--grid` pack tighter at the cost of runtime.
 - **Not yet hardware-verified:** outputs pass structural + no-overlap validation,
@@ -149,6 +151,8 @@ Quick use (build once if the binary is missing, then call with absolute paths):
 Each closed SVG outline = one nested piece (holes stay attached); pieces that don't
 fit spill onto extra canvases. Exit 0 = success (summary on stdout); exit 1 = error
 (message on stderr) — a piece larger than the sheet is the common failure, fix by
-raising --material. Default spacing 3 mm, margin 5 mm. Not yet hardware-verified —
+raising --material. `--spacing` (default 3 mm) is the single "space around items"
+value (gap between pieces + layout border). The layout is anchored at the canvas
+top-left; the user repositions the material in MakeIt!. Not yet hardware-verified —
 have the user open the result in MakeIt! to confirm size before cutting.
 ```

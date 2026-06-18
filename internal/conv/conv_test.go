@@ -91,7 +91,7 @@ func TestNestNoOverlapAndSpacing(t *testing.T) {
 	}
 	pieces := buildPieces(subs, flattenTol)
 	const spacing = 3.0
-	opt := NestOptions{MaterialW: 130, MaterialH: 130, Margin: 5, Spacing: spacing, Grid: 1.0, Rotations: []float64{0, 90, 180, 270}}
+	opt := NestOptions{MaterialW: 130, MaterialH: 130, Spacing: spacing, Grid: 1.0, Rotations: []float64{0, 90, 180, 270}}
 	placements, sheets, err := Nest(pieces, opt)
 	if err != nil {
 		t.Fatal(err)

@@ -11,8 +11,7 @@ type Options struct {
 	Name      string
 	MaterialW float64
 	MaterialH float64
-	Margin    float64
-	Spacing   float64
+	Spacing   float64 // space around items (between pieces and the layout border)
 	Grid      float64
 	Rotations []float64
 	Scale     float64 // user-unit -> mm override; <=0 means auto
@@ -55,7 +54,6 @@ func Convert(r io.Reader, opt Options) ([]byte, Summary, error) {
 	placements, sheets, err := Nest(pieces, NestOptions{
 		MaterialW: opt.MaterialW,
 		MaterialH: opt.MaterialH,
-		Margin:    opt.Margin,
 		Spacing:   opt.Spacing,
 		Grid:      opt.Grid,
 		Rotations: opt.Rotations,

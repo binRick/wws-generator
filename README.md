@@ -40,15 +40,16 @@ node src/generate-square.js 100 ~/Desktop/cups/WWS/my-square.wws
 | `--material WxH` | — | sheet size in mm, e.g. `300x200` (required) |
 | `--out FILE` | `<input>.wws` | output file |
 | `--name NAME` | output base name | project name shown in MakeIt! |
-| `--margin MM` | `5` | clearance from the sheet edge |
-| `--spacing MM` | `3` | minimum gap between pieces |
+| `--spacing MM` | `3` | space around items — the gap between pieces and the border around the whole layout |
 | `--grid MM` | `1.0` | nesting resolution — smaller packs tighter but is slower |
 | `--rotations N\|list` | `8` | rotation candidates: a count for N evenly-spaced angles, or a comma list of degrees (`1` = no rotation, `4` = 90° steps) |
 | `--scale F` | auto | force user-unit → mm factor (default 1 unit = 1 mm) |
 | `--power N` | `0` | cut power 0–100 (usually set per material in MakeIt!) |
 | `--speed N` | `5` | cut speed |
 
-See [`docs/svg2wws.md`](docs/svg2wws.md) for how nesting works and current limits.
+The layout is anchored at the canvas **top-left** (every item gets `--spacing` of
+clear space around it); reposition it on the bed inside MakeIt!. See
+[`docs/svg2wws.md`](docs/svg2wws.md) for how nesting works and current limits.
 
 ## Layout
 
