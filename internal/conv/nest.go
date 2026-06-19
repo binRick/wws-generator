@@ -126,6 +126,12 @@ func Nest(pieces []Piece, opt NestOptions) ([]Placement, int, error) {
 // errors if any single piece is too large to fit on an empty sheet.
 func nestPieces(pieces []Piece, opt NestOptions) ([]Placement, int, error) {
 	res := opt.Grid
+	if res <= 0 {
+		return nil, 0, fmt.Errorf("grid resolution must be positive (got %.3f)", res)
+	}
+	if opt.MaterialW <= 0 || opt.MaterialH <= 0 {
+		return nil, 0, fmt.Errorf("material must be positive (got %.1fx%.1f mm)", opt.MaterialW, opt.MaterialH)
+	}
 	// The usable nesting area is the sheet inset by Margin on every side (the
 	// border against the material edge); the layout is anchored at that inset.
 	// Pieces are kept Spacing apart from each other via mask dilation.

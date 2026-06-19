@@ -6,9 +6,12 @@ instead of only by hand in the closed MakeIt! GUI.
 
 ## Before pushing
 
-Run `./scripts/test.sh` — it must print `ALL CHECKS PASSED` (gofmt, vet, build both
-binaries, `go test ./...`, CLI smoke tests, and an optional sweep of the `.wws`
-library). Feature→test map and details in `docs/TESTPLAN.md`.
+Run `./scripts/test.sh` — it must print `ALL CHECKS PASSED` (gofmt, vet, build all
+three binaries, `go test ./...`, then CLI tests: every input format
+(SVG/PDF/AI/DXF/raster) from self-generated fixtures, every flag, a ~23-case
+malformed/edge battery that must error cleanly and never panic, stress + output
+integrity, and an optional sweep of the `.wws` library at `~/cups/WWS`). Needs
+`python3`. Feature→test map and details in `docs/TESTPLAN.md`.
 
 ## The one thing to know
 

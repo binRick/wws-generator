@@ -113,6 +113,9 @@ func run(args []string) error {
 		fmt.Printf(" (%d failed)", failed)
 	}
 	fmt.Println()
+	if failed > 0 {
+		return fmt.Errorf("%d file(s) failed to convert", failed)
+	}
 	return nil
 }
 

@@ -7,11 +7,14 @@ Run before pushing any change:
 ```
 
 It exits non-zero on the first failure and prints `ALL CHECKS PASSED` on success.
-The script builds both binaries into a temp dir, runs the Go suite, and smoke-tests
-the CLIs against the in-repo sample (`samples/test-parts.svg`,
-`samples/square-100.known-good.wws`) so it needs **no external files**. If a folder
-of real `.wws` files exists at `~/Desktop/cups/WWS` (or `WWS_LIB=/path`), it also
-sweeps the whole library and checks every SVG is well-formed.
+The script builds all three binaries into a temp dir, runs the Go suite, then
+hammers the CLIs: it converts **every input format** (SVG/PDF/AI/DXF/raster) from
+self-contained fixtures it generates at runtime, exercises every flag, fires a
+battery of malformed/edge inputs that must error cleanly and **never panic**,
+stress-tests the nester, and validates output integrity (valid v3.0.4 JSON, one
+`processList` entry per object, everything within the material). It needs **no
+external files** (`python3` is required). If a folder of real `.wws` files exists
+at `~/cups/WWS` (or `WWS_LIB=/path`), it also sweeps the whole library.
 
 ## What runs
 
@@ -19,12 +22,14 @@ sweeps the whole library and checks every SVG is well-formed.
 | --- | --- | --- |
 | Format | `gofmt -l` | no unformatted Go files |
 | Vet | `go vet ./...` | no suspicious constructs |
-| Build | `go build` | both `svg2wws` and `wws2svg` compile |
+| Build | `go build` | all three binaries compile |
 | Unit + e2e | `go test ./...` | the test matrix below |
-| svg2wws smoke | CLI runs | default, rotation/grid variants, spill, oversized-error |
-| wws2svg smoke | CLI runs | sample converts to a valid SVG |
-| wws2json smoke | CLI runs | sample converts to valid JSON with expected fields |
-| Library sweep (optional) | CLI batch | all real files convert; every SVG is well-formed XML and every JSON parses |
+| Every format | CLI runs | SVG/PDF/AI/DXF/PNG each → a valid `.wws`; PDF→cut+engrave, PNG→fillEngrave image |
+| Every flag | CLI runs | spacing/margin/grid/rotations(count+list)/scale/power/speed/passes/name/no-engrave-align/no-group-engrave; `--name`/`--power`/`--passes` propagate; engrave consolidated |
+| Adversarial | CLI runs | ~23 malformed/edge inputs (bad files, missing/garbage flags, oversized, 0/negative material/grid/spacing/margin) all exit non-zero and **never panic** |
+| Stress | CLI runs | 60-piece multi-sheet spill, 6×6 tiny sheet, 32 rotations — all valid + in-bounds |
+| Integrity | CLI runs | round-trip svg→wws→svg keeps all 5 paths; wws→json valid; bad `.wws` errors non-zero |
+| Library sweep (optional) | CLI batch | all real files convert (non-zero exit if any fails); every SVG well-formed, every JSON parses |
 
 ## Feature → test coverage
 
@@ -40,8 +45,15 @@ sweeps the whole library and checks every SVG is well-formed.
 | End-to-end: valid v3.0.4 JSON, objects within material, top-left anchor, `processList` keyed to objects | `TestConvertEndToEnd` |
 | Multi-sheet spill onto extra canvases | `TestMultiSheetSpill` |
 | Oversized single piece → error | `TestOversizedErrors` |
-| Rotation / grid flag variants | `scripts/test.sh` (CLI smoke) |
-| Spill summary line | `scripts/test.sh` (CLI smoke) |
+| Color → operation mapping (red=cut, fill=fillEngrave, other stroke=engrave) + per-color layers | `TestColorRoleMapping` |
+| Engrave-align rotates a tall engraving flat | `TestEngraveAlignFlattensEngraving` |
+| Engrave grouping onto separate sheets | `TestGroupEngraveSeparatesSheets` |
+| Floating label glyphs sharing a `<g>` stay one block | `TestLabelGroupStaysTogether` |
+| `<use>`/`<defs>`/`<symbol>`, style inheritance, `rgb()` colors | `TestUseDefsRGBInheritance` |
+| PDF/AI: content-stream interpreter (red stroke=cut, black fill=engrave) | `TestPDFInterpreter` |
+| DXF: LWPOLYLINE + CIRCLE → geometry with hole | `TestDXFBasic` |
+| Raster image → fit-to-sheet fillEngrave image object | `TestRasterImageEngrave` |
+| Every input format, every flag, adversarial battery, stress, integrity | `scripts/test.sh` (CLI) |
 
 ### `wws2svg` (`.wws` → SVG)
 

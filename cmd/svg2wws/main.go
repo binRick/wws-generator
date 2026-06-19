@@ -69,6 +69,15 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
+	if f.grid <= 0 {
+		return fmt.Errorf("--grid must be > 0 (got %g)", f.grid)
+	}
+	if f.spacing < 0 {
+		return fmt.Errorf("--spacing must be >= 0 (got %g)", f.spacing)
+	}
+	if f.margin < 0 {
+		return fmt.Errorf("--margin must be >= 0 (got %g)", f.margin)
+	}
 
 	out := f.out
 	if out == "" {

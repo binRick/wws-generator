@@ -6,3 +6,4 @@ node_modules/
 /svg2wws
 /wws2svg
 /wws2json
+/*.wws
