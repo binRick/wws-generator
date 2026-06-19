@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,27 +22,33 @@ func main() {
 }
 
 type flags struct {
-	in        string
-	out       string
-	material  string
-	spacing   float64
-	grid      float64
-	rotations string
-	scale     float64
-	power     int
-	speed     int
-	passes    int
-	name      string
+	in           string
+	out          string
+	material     string
+	spacing      float64
+	margin       float64
+	grid         float64
+	rotations    string
+	scale        float64
+	power        int
+	speed        int
+	passes       int
+	name         string
+	engraveAlign bool
+	groupEngrave bool
 }
 
 func run(args []string) error {
 	f := flags{
-		spacing:   3,
-		grid:      1.0,
-		rotations: "8",
-		power:     0,
-		speed:     5,
-		passes:    1,
+		spacing:      3,
+		margin:       10,
+		grid:         1.0,
+		rotations:    "8",
+		power:        0,
+		speed:        5,
+		passes:       1,
+		engraveAlign: true,
+		groupEngrave: true,
 	}
 	fs := newFlagSet(&f)
 	if err := fs.parse(args); err != nil {
@@ -73,27 +80,65 @@ func run(args []string) error {
 		name = strings.TrimSuffix(filepath.Base(out), filepath.Ext(out))
 	}
 
-	in, err := os.Open(f.in)
-	if err != nil {
-		return err
+	opt := conv.Options{
+		Name:         name,
+		MaterialW:    mw,
+		MaterialH:    mh,
+		Spacing:      f.spacing,
+		Margin:       f.margin,
+		Grid:         f.grid,
+		Rotations:    rots,
+		Scale:        f.scale,
+		CutPower:     f.power,
+		CutSpeed:     f.speed,
+		CutPasses:    f.passes,
+		EngraveAlign: f.engraveAlign,
+		GroupEngrave: f.groupEngrave,
+		Time:         time.Now().UnixMilli(),
 	}
-	defer in.Close()
 
-	data, sum, err := conv.Convert(in, conv.Options{
-		Name:      name,
-		MaterialW: mw,
-		MaterialH: mh,
-		Spacing:   f.spacing,
-		Grid:      f.grid,
-		Rotations: rots,
-		Scale:     f.scale,
-		CutPower:  f.power,
-		CutSpeed:  f.speed,
-		CutPasses: f.passes,
-		Time:      time.Now().UnixMilli(),
-	})
-	if err != nil {
-		return err
+	format := strings.ToLower(strings.TrimPrefix(filepath.Ext(f.in), "."))
+	var data []byte
+	var sum conv.Summary
+	switch format {
+	case "", "svg":
+		raw, err := os.ReadFile(f.in)
+		if err != nil {
+			return err
+		}
+		data, sum, err = conv.Convert(bytes.NewReader(raw), opt)
+		if err != nil {
+			return err
+		}
+	case "pdf", "ai":
+		raw, err := os.ReadFile(f.in)
+		if err != nil {
+			return err
+		}
+		data, sum, err = conv.ConvertPDF(raw, opt)
+		if err != nil {
+			return err
+		}
+	case "dxf":
+		raw, err := os.ReadFile(f.in)
+		if err != nil {
+			return err
+		}
+		data, sum, err = conv.ConvertDXF(raw, opt)
+		if err != nil {
+			return err
+		}
+	case "png", "jpg", "jpeg", "gif", "bmp":
+		raw, err := os.ReadFile(f.in)
+		if err != nil {
+			return err
+		}
+		data, sum, err = conv.ConvertRaster(raw, format, opt)
+		if err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unsupported input format %q (supported: svg, pdf, ai, dxf, png, jpg)", format)
 	}
 	if err := os.WriteFile(out, data, 0o644); err != nil {
 		return err
@@ -102,8 +147,16 @@ func run(args []string) error {
 	fmt.Printf("Wrote %s\n", out)
 	fmt.Printf("  %d piece(s) nested onto %d sheet(s) of %.0fx%.0f mm (%d bytes)\n",
 		sum.Pieces, sum.Sheets, mw, mh, sum.Bytes)
-	fmt.Printf("  %.1f mm space around items, grid %.2f mm, %d rotations; layout anchored top-left\n",
-		f.spacing, f.grid, len(rots))
+	align := "engrave-align on"
+	if !f.engraveAlign {
+		align = "engrave-align off"
+	}
+	fmt.Printf("  %.1f mm margin, %.1f mm between items, grid %.2f mm, %d rotations, %s; layout anchored top-left\n",
+		f.margin, f.spacing, f.grid, len(rots), align)
+	if sum.EngraveSheets > 0 && sum.EngraveSheets < sum.Sheets {
+		fmt.Printf("  engraving consolidated onto the last %d of %d sheet(s); the rest are cut-only\n",
+			sum.EngraveSheets, sum.Sheets)
+	}
 	fmt.Printf("  Open in MakeIt! to verify dimensions and cut (reposition on the bed as needed).\n")
 	return nil
 }
@@ -190,6 +243,8 @@ func (fs *flagSet) parse(args []string) error {
 			f.material, err = next()
 		case "--spacing":
 			err = setFloat(next, &f.spacing)
+		case "--margin":
+			err = setFloat(next, &f.margin)
 		case "--grid":
 			err = setFloat(next, &f.grid)
 		case "--rotations":
@@ -204,6 +259,14 @@ func (fs *flagSet) parse(args []string) error {
 			err = setInt(next, &f.passes)
 		case "--name":
 			f.name, err = next()
+		case "--engrave-align":
+			f.engraveAlign = true
+		case "--no-engrave-align":
+			f.engraveAlign = false
+		case "--group-engrave":
+			f.groupEngrave = true
+		case "--no-group-engrave":
+			f.groupEngrave = false
 		default:
 			return fmt.Errorf("unknown flag %q (try --help)", a)
 		}
@@ -241,23 +304,32 @@ func setInt(next func() (string, error), dst *int) error {
 }
 
 func printUsage() {
-	fmt.Print(`svg2wws — convert an SVG into a WeCreat MakeIt! .wws file (nested onto sheets)
+	fmt.Print(`svg2wws — convert a design (SVG/PDF/AI/DXF/raster) into a WeCreat MakeIt! .wws file
 
 Usage:
   svg2wws --in design.svg --material 300x200 [options]
 
 Required:
-  --in FILE          input SVG
+  --in FILE          input design: .svg, .pdf, .ai, .dxf, or a raster
+                     .png/.jpg/.gif (embedded as fill-engrave). All parsed
+                     natively — no external tools.
   --material WxH     sheet size in mm (e.g. 300x200)
 
 Options:
   --out FILE         output .wws (default: <input>.wws)
   --name NAME        project name shown in MakeIt! (default: output base name)
-  --spacing MM       space around items: gap between pieces and the border around
-                     the whole layout (default 3)
+  --spacing MM       gap between pieces (default 3)
+  --margin MM        border between the layout and the material edge, for leeway
+                     against the sheet edge (default 10)
   --grid MM          nesting resolution; smaller = tighter but slower (default 1.0)
-  --rotations N|list rotation candidates: a count for N evenly-spaced angles,
-                     or a comma list of degrees (default 8)
+  --rotations N|list rotation candidates for cut pieces: a count for N evenly-
+                     spaced angles, or a comma list of degrees (default 8)
+  --no-engrave-align keep engrave pieces in their drawn orientation. By default,
+                     a piece carrying engraving may rotate to lay its engraving
+                     flat (horizontal), so the laser raster-engraves it faster.
+  --no-group-engrave allow engrave pieces to share sheets with cut-only pieces.
+                     By default, engrave-bearing pieces are consolidated onto
+                     their own sheet(s) so the cut-only sheets carry no engraving.
   --scale F          force user-unit -> mm factor (default: auto; 1 unit = 1 mm)
   --power N          cut power 0-100 (default 0; set per material in MakeIt!)
   --speed N          cut speed (default 5)

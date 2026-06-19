@@ -57,16 +57,40 @@ coords) and `6MM-5X5-DICE-HOLDER.wws` (paths in large coord space + ~0.0257 scal
 Go single-binary converter lives in `cmd/svg2wws` (CLI) + `internal/conv` (logic);
 spec is **`docs/svg2wws.md`** (and `docs/svg2wws-agent.md` for invoking it from
 another repo). Build: `go build -o svg2wws ./cmd/svg2wws`. Run:
-`./svg2wws --in design.svg --material 300x200`. It parses SVG (transforms + units →
-absolute mm, all commands simplified to `M/L/C/Q/Z`), groups subpaths into pieces by
-even/odd containment (outer + holes), **raster-nests** the true polygon footprints
-onto sheets (free rotation, holes are free space, multi-sheet spill → one canvas per
-sheet), and emits the v3.0.4 envelope (coords baked absolute, scale 1, `left/top` =
-exact path bbox min). `--spacing` (default 3mm) is the single "space around items"
-value — both the gap between pieces and the layout border; the layout is anchored at
-the canvas top-left (no bed positioning — the user moves it in MakeIt!). Tests: `go
-test ./...` (covers path simplify, arc, hole grouping, unit scale, no-overlap/spacing).
-Defaults: `--spacing 3 --grid 1.0 --rotations 8`; oversized single pieces error out.
+`./svg2wws --in design.svg --material 300x200`. **Input formats** (auto-detected by
+extension, all parsed natively — **no external tools**): `.svg`; `.pdf`/`.ai` (native
+`pdf.go` — vendored `rsc.io/pdf` does object/xref/stream plumbing, an in-package
+content-stream interpreter walks path ops + colorspaces → cut/engrave by color; **text
+is dropped** — no font rasterising — so comment labels are lost, but cut geometry is
+identical to the sibling SVG); `.dxf` (native `dxf.go` —
+LINE/LWPOLYLINE/POLYLINE/CIRCLE/ARC/ELLIPSE/SPLINE-NURBS, `$INSUNITS`,
+layer/color→operation, Y-flip; defaults to cut); and raster `.png`/`.jpg`/`.gif`
+(embedded as a single fill-engrave image object scaled to fit, `format.go`). The SVG
+parser also handles `<use>`/`<defs>`/`<symbol>`, style inheritance, and `rgb()`. Only
+non-stdlib dep is `rsc.io/pdf` (vendored in `vendor/`). It parses SVG (transforms + units →
+absolute mm, all commands simplified to `M/L/C/Q/Z`) and classifies each element by
+color: **red stroke = cut**, **any fill = fillEngrave**, **other stroke = engrave**.
+Cut paths group into pieces by even/odd containment (outer + holes); engrave/fill
+shapes become "marks" attached to the cut piece that contains them. Marks that float
+free (outside every cut outline) are orphans — typically label/comment text; orphans
+sharing an SVG `<g>` group are bundled into one piece so the text isn't scattered. It **raster-nests** the true cut polygon
+footprints onto sheets (free rotation, holes are free space, multi-sheet spill → one
+canvas per sheet), and emits the v3.0.4 envelope (coords baked absolute, scale 1,
+`left/top` = exact path bbox min, per-color `layerDataList`, matching `processMode`).
+Two distances: `--spacing` (default 3mm) is the gap between pieces; `--margin` (default
+10mm) is the border between the layout and the material edge. **Engrave alignment is on
+by default** (`--no-engrave-align` to disable): a piece carrying engraving may rotate
+(even under `--rotations 1`) to lay its engraving in a short, horizontal band so the
+laser raster-engraves it in fewer scan lines / less head travel; cut-only pieces never
+rotate beyond `--rotations`. **Engrave grouping is also on by default**
+(`--no-group-engrave` to disable): engrave-bearing pieces are nested onto their own
+sheet(s) after the cut-only pieces, so all engraving is consolidated on the later
+canvas(es) and the cut-only sheets carry no engraving (set up cut once, engrave once).
+The layout is anchored at the canvas top-left (no bed positioning — the user moves it in
+MakeIt!). Tests: `go test ./...` (covers path simplify, arc, hole grouping, unit scale,
+no-overlap/spacing, color→operation mapping, engrave-align rotation, engrave grouping).
+Defaults: `--spacing 3 --margin 10 --grid 1.0 --rotations 8`, engrave-align +
+engrave-group on; oversized single pieces error out.
 
 **Not yet hardware-verified** — outputs pass structural + no-overlap validation but no
 converter file has been confirmed to open in MakeIt!. Have the user test one.
@@ -99,8 +123,10 @@ width/height is not stored** in a `.wws`. Single file → stdout; directory → 
 
 ### Next directions (not yet built)
 
-- Verify converter output opens in MakeIt!; confirm the exact SVG-unit→mm import rule.
-- Engrave / fill-engrave layer mapping (multiple stroke colors → processModes), kerf
-  compensation, `<use>`/`<text>`/`<image>` support, smarter (GA) nesting.
+- Verify converter output opens in MakeIt!; confirm the exact SVG-unit→mm import rule,
+  and that the cut/engrave/fillEngrave color mapping renders the right operations.
+- Richer CSS (id/element selectors, specificity, `currentColor`, gradients), engrave
+  power/speed defaults per material, kerf compensation, `<use>`/`<text>`/`<image>`
+  support, smarter (GA) nesting.
 - `~/repos/design-explorer` (indexes the user's purchased laser SVG/6 mm design packs)
   is a natural SVG source and a possible host for a "Convert to .wws" feature.

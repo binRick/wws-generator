@@ -41,21 +41,27 @@ func coverDataURI(placements []Placement, opt BuildOptions, flattenTol float64) 
 	drawRect(img, pad, pad, pad+int(W*scale), pad+int(H*scale), border)
 
 	line := color.RGBA{230, 31, 25, 255} // cut red
+	mark := color.RGBA{60, 60, 60, 255}  // engrave (dark gray)
 	toPx := func(p Point) (int, int) {
 		return pad + int(p.X*scale), pad + int(p.Y*scale)
+	}
+	drawSubs := func(pl Placement, sps []Subpath, c color.RGBA) {
+		for _, sp := range sps {
+			poly := sp.transform(pl.M).Flatten(flattenTol)
+			for i := 0; i+1 < len(poly); i++ {
+				x0, y0 := toPx(poly[i])
+				x1, y1 := toPx(poly[i+1])
+				drawLine(img, x0, y0, x1, y1, c)
+			}
+		}
 	}
 	for _, pl := range placements {
 		if pl.Sheet != 0 {
 			continue
 		}
-		for _, sp := range pl.Piece.Subpaths {
-			tsp := sp.transform(pl.M)
-			poly := tsp.Flatten(flattenTol)
-			for i := 0; i+1 < len(poly); i++ {
-				x0, y0 := toPx(poly[i])
-				x1, y1 := toPx(poly[i+1])
-				drawLine(img, x0, y0, x1, y1, line)
-			}
+		drawSubs(pl, pl.Piece.Subpaths, line)
+		for _, mk := range pl.Piece.Marks {
+			drawSubs(pl, mk.Subpaths, mark)
 		}
 	}
 

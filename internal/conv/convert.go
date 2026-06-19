@@ -11,21 +11,32 @@ type Options struct {
 	Name      string
 	MaterialW float64
 	MaterialH float64
-	Spacing   float64 // space around items (between pieces and the layout border)
+	Spacing   float64 // gap between pieces
+	Margin    float64 // border between the layout and the material edge (<=0 -> Spacing)
 	Grid      float64
-	Rotations []float64
-	Scale     float64 // user-unit -> mm override; <=0 means auto
-	CutPower  int
-	CutSpeed  int
-	CutPasses int
-	Time      int64
+
+	// EngraveAlign lets engrave-bearing pieces rotate to lay their engraving in a
+	// short horizontal band (faster raster engraving). Cut-only pieces are
+	// unaffected. Has no effect on SVGs without engrave content.
+	EngraveAlign bool
+
+	// GroupEngrave consolidates all engrave-bearing pieces onto their own
+	// sheet(s), separate from cut-only pieces. No effect without engrave content.
+	GroupEngrave bool
+	Rotations    []float64
+	Scale        float64 // user-unit -> mm override; <=0 means auto
+	CutPower     int
+	CutSpeed     int
+	CutPasses    int
+	Time         int64
 }
 
 // Summary reports what the conversion produced.
 type Summary struct {
-	Pieces int
-	Sheets int
-	Bytes  int
+	Pieces        int
+	Sheets        int
+	EngraveSheets int // how many sheets carry engraving
+	Bytes         int
 }
 
 // flattenTol is the curve-flattening tolerance (mm) used for nesting and the
@@ -46,21 +57,60 @@ func Convert(r io.Reader, opt Options) ([]byte, Summary, error) {
 	if len(subs) == 0 {
 		return nil, Summary{}, fmt.Errorf("no drawable geometry found in SVG")
 	}
+	return convertSubpaths(subs, opt)
+}
 
-	pieces := buildPieces(subs, flattenTol)
-	if len(pieces) == 0 {
-		return nil, Summary{}, fmt.Errorf("no closed pieces found in SVG")
+// convertSubpaths runs the shared pipeline (role split → pieces → nest → emit)
+// for geometry from any front-end (SVG, DXF, …).
+func convertSubpaths(subs []Subpath, opt Options) ([]byte, Summary, error) {
+	// Split geometry by role: cut paths form pieces; engrave/fillEngrave shapes
+	// become marks (grouped per source element so glyph holes survive).
+	var cutSubs []Subpath
+	marksByElem := map[int]*Mark{}
+	var markOrder []int
+	for _, sp := range subs {
+		if sp.Role == RoleCut {
+			cutSubs = append(cutSubs, sp)
+			continue
+		}
+		mk, ok := marksByElem[sp.Elem]
+		if !ok {
+			mk = &Mark{Role: sp.Role, Color: sp.Color, Group: sp.Group}
+			marksByElem[sp.Elem] = mk
+			markOrder = append(markOrder, sp.Elem)
+		}
+		mk.Subpaths = append(mk.Subpaths, sp)
 	}
 
+	pieces := buildPieces(cutSubs, flattenTol)
+	pieces = attachMarks(pieces, marksByElem, markOrder, flattenTol)
+	if len(pieces) == 0 {
+		return nil, Summary{}, fmt.Errorf("no closed pieces found")
+	}
+
+	margin := opt.Margin
+	if margin <= 0 {
+		margin = opt.Spacing
+	}
 	placements, sheets, err := Nest(pieces, NestOptions{
-		MaterialW: opt.MaterialW,
-		MaterialH: opt.MaterialH,
-		Spacing:   opt.Spacing,
-		Grid:      opt.Grid,
-		Rotations: opt.Rotations,
+		MaterialW:    opt.MaterialW,
+		MaterialH:    opt.MaterialH,
+		Spacing:      opt.Spacing,
+		Margin:       margin,
+		Grid:         opt.Grid,
+		Rotations:    opt.Rotations,
+		EngraveAlign: opt.EngraveAlign,
+		GroupEngrave: opt.GroupEngrave,
 	})
 	if err != nil {
 		return nil, Summary{}, err
+	}
+
+	engraveSheet := map[int]bool{}
+	for _, pl := range placements {
+		if len(pl.Piece.Marks) > 0 {
+			engraveSheet[pl.Sheet] = true
+		}
 	}
 
 	bopt := BuildOptions{
@@ -82,5 +132,5 @@ func Convert(r io.Reader, opt Options) ([]byte, Summary, error) {
 	if err != nil {
 		return nil, Summary{}, err
 	}
-	return out, Summary{Pieces: len(pieces), Sheets: sheets, Bytes: len(out)}, nil
+	return out, Summary{Pieces: len(pieces), Sheets: sheets, EngraveSheets: len(engraveSheet), Bytes: len(out)}, nil
 }

@@ -17,14 +17,20 @@ func ParseSVG(r io.Reader, scaleOverride float64) ([]Subpath, error) {
 	dec := xml.NewDecoder(r)
 	dec.Strict = false
 
-	w := &svgWalker{}
+	w := &svgWalker{css: map[string]map[string]string{}, defs: map[string][]Subpath{}}
 	var rootSeen bool
 
 	type frame struct {
-		mat  Matrix
-		name string
+		mat    Matrix
+		defMat Matrix // matrix relative to the current def root (for <defs>/<use>)
+		name   string
+		group  int
+		fill   string // inherited fill
+		stroke string // inherited stroke
+		inDefs bool   // inside a <defs>/<symbol> (content collected, not drawn)
+		defID  string // id of the def root being collected ("" if none)
 	}
-	stack := []frame{{mat: Identity()}}
+	stack := []frame{{mat: Identity(), defMat: Identity(), group: -1}}
 
 	for {
 		tok, err := dec.Token()
@@ -35,6 +41,10 @@ func ParseSVG(r io.Reader, scaleOverride float64) ([]Subpath, error) {
 			return nil, fmt.Errorf("svg: %w", err)
 		}
 		switch t := tok.(type) {
+		case xml.CharData:
+			if len(stack) > 0 && stack[len(stack)-1].name == "style" {
+				w.styleBuf = append(w.styleBuf, t...)
+			}
 		case xml.StartElement:
 			parent := stack[len(stack)-1]
 			local := Identity()
@@ -57,12 +67,37 @@ func ParseSVG(r io.Reader, scaleOverride float64) ([]Subpath, error) {
 				w.scale = s
 				cur = Scale(s, s).Mul(cur)
 			}
-			if err := w.element(name, t, cur); err != nil {
+			group := parent.group
+			if name == "g" {
+				group = w.groupSeq
+				w.groupSeq++
+			}
+			fill, stroke := w.resolveStyle(t, parent.fill, parent.stroke)
+
+			// Track <defs>/<symbol> so referenced geometry is collected, not drawn.
+			inDefs := parent.inDefs || name == "defs" || name == "symbol"
+			defID := parent.defID
+			defMat := parent.defMat.Mul(local)
+			if defID == "" && inDefs {
+				if id := attr(t, "id"); id != "" {
+					defID = id
+					defMat = local
+				}
+			}
+
+			if err := w.element(name, t, cur, defMat, group, fill, stroke, inDefs, defID); err != nil {
 				return nil, err
 			}
-			stack = append(stack, frame{mat: cur, name: name})
+			stack = append(stack, frame{
+				mat: cur, defMat: defMat, name: name, group: group,
+				fill: fill, stroke: stroke, inDefs: inDefs, defID: defID,
+			})
 		case xml.EndElement:
 			if len(stack) > 1 {
+				if stack[len(stack)-1].name == "style" {
+					w.parseCSS(string(w.styleBuf))
+					w.styleBuf = nil
+				}
 				stack = stack[:len(stack)-1]
 			}
 		}
@@ -75,8 +110,193 @@ func ParseSVG(r io.Reader, scaleOverride float64) ([]Subpath, error) {
 }
 
 type svgWalker struct {
-	subs  []Subpath
-	scale float64
+	subs     []Subpath
+	scale    float64
+	css      map[string]map[string]string // class name -> {fill,stroke,...}
+	defs     map[string][]Subpath         // id -> raw geometry (def-local coords), for <use>
+	styleBuf []byte                       // accumulates <style> text content
+	elem     int                          // running source-element index
+	groupSeq int                          // running <g> index
+}
+
+// parseCSS reads a stylesheet body and records fill/stroke for each `.class`.
+func (w *svgWalker) parseCSS(s string) {
+	// Strip /* comments */.
+	for {
+		i := strings.Index(s, "/*")
+		if i < 0 {
+			break
+		}
+		j := strings.Index(s[i:], "*/")
+		if j < 0 {
+			s = s[:i]
+			break
+		}
+		s = s[:i] + s[i+j+2:]
+	}
+	for len(s) > 0 {
+		open := strings.IndexByte(s, '{')
+		if open < 0 {
+			break
+		}
+		sel := strings.TrimSpace(s[:open])
+		closeAt := strings.IndexByte(s, '}')
+		if closeAt < 0 {
+			break
+		}
+		props := parseDecls(s[open+1 : closeAt])
+		for _, one := range strings.Split(sel, ",") {
+			one = strings.TrimSpace(one)
+			if cls := strings.TrimPrefix(one, "."); strings.HasPrefix(one, ".") && cls != "" {
+				if w.css[cls] == nil {
+					w.css[cls] = map[string]string{}
+				}
+				for k, v := range props {
+					w.css[cls][k] = v
+				}
+			}
+		}
+		s = s[closeAt+1:]
+	}
+}
+
+// resolveStyle computes the effective fill/stroke for an element, starting from
+// the inherited values and overriding with presentation attributes, then CSS
+// classes, then an inline style.
+func (w *svgWalker) resolveStyle(e xml.StartElement, pFill, pStroke string) (fill, stroke string) {
+	fill, stroke = pFill, pStroke
+	if v := attr(e, "fill"); v != "" {
+		fill = v
+	}
+	if v := attr(e, "stroke"); v != "" {
+		stroke = v
+	}
+	for _, cls := range strings.Fields(attr(e, "class")) {
+		if props, ok := w.css[cls]; ok {
+			if v, ok := props["fill"]; ok {
+				fill = v
+			}
+			if v, ok := props["stroke"]; ok {
+				stroke = v
+			}
+		}
+	}
+	if st := attr(e, "style"); st != "" {
+		props := parseDecls(st)
+		if v, ok := props["fill"]; ok {
+			fill = v
+		}
+		if v, ok := props["stroke"]; ok {
+			stroke = v
+		}
+	}
+	return
+}
+
+func parseDecls(s string) map[string]string {
+	out := map[string]string{}
+	for _, d := range strings.Split(s, ";") {
+		k, v, ok := strings.Cut(d, ":")
+		if !ok {
+			continue
+		}
+		out[strings.ToLower(strings.TrimSpace(k))] = strings.TrimSpace(v)
+	}
+	return out
+}
+
+// classifyRole maps an element's fill/stroke to a laser operation + hex color.
+func classifyRole(fill, stroke string) (Role, string) {
+	hasFill := fill != "" && !strings.EqualFold(fill, "none")
+	hasStroke := stroke != "" && !strings.EqualFold(stroke, "none")
+	switch {
+	case hasStroke && isCutColor(stroke):
+		return RoleCut, cutRed
+	case hasFill:
+		return RoleFillEngrave, normColor(fill)
+	case hasStroke:
+		return RoleEngrave, normColor(stroke)
+	default:
+		return RoleCut, cutRed
+	}
+}
+
+var namedColors = map[string]string{
+	"black": "#000000", "white": "#FFFFFF", "red": "#FF0000",
+	"green": "#008000", "blue": "#0000FF", "yellow": "#FFFF00",
+	"gray": "#808080", "grey": "#808080",
+}
+
+// normColor canonicalises a CSS color to "#RRGGBB" where possible.
+func normColor(c string) string {
+	c = strings.TrimSpace(c)
+	if c == "" {
+		return ""
+	}
+	if h, ok := namedColors[strings.ToLower(c)]; ok {
+		return h
+	}
+	if strings.HasPrefix(c, "#") {
+		hex := strings.ToUpper(c[1:])
+		if len(hex) == 3 {
+			hex = string([]byte{hex[0], hex[0], hex[1], hex[1], hex[2], hex[2]})
+		}
+		if len(hex) == 6 {
+			return "#" + hex
+		}
+	}
+	if h, ok := parseRGB(c); ok {
+		return h
+	}
+	return c
+}
+
+// parseRGB handles CSS rgb()/rgba() with integer (0-255) or percentage channels,
+// as emitted by pdftocairo (PDF→SVG), e.g. "rgb(100%, 0%, 0%)".
+func parseRGB(c string) (string, bool) {
+	lc := strings.ToLower(strings.TrimSpace(c))
+	if !strings.HasPrefix(lc, "rgb(") && !strings.HasPrefix(lc, "rgba(") {
+		return "", false
+	}
+	open := strings.IndexByte(lc, '(')
+	inner := strings.TrimSuffix(strings.TrimSpace(lc[open+1:]), ")")
+	parts := strings.Split(inner, ",")
+	if len(parts) < 3 {
+		return "", false
+	}
+	var ch [3]int
+	for i := 0; i < 3; i++ {
+		p := strings.TrimSpace(parts[i])
+		if strings.HasSuffix(p, "%") {
+			f, err := strconv.ParseFloat(strings.TrimSpace(strings.TrimSuffix(p, "%")), 64)
+			if err != nil {
+				return "", false
+			}
+			ch[i] = int(math.Round(f / 100 * 255))
+		} else {
+			f, err := strconv.ParseFloat(p, 64)
+			if err != nil {
+				return "", false
+			}
+			ch[i] = int(math.Round(f))
+		}
+		if ch[i] < 0 {
+			ch[i] = 0
+		}
+		if ch[i] > 255 {
+			ch[i] = 255
+		}
+	}
+	return fmt.Sprintf("#%02X%02X%02X", ch[0], ch[1], ch[2]), true
+}
+
+// isCutColor reports whether a stroke color denotes a cut (red).
+func isCutColor(c string) bool {
+	switch normColor(c) {
+	case "#E61F19", "#FF0000":
+		return true
+	}
+	return false
 }
 
 // rootScale derives the user-unit -> mm factor from the root element.
@@ -99,7 +319,28 @@ func (w *svgWalker) rootScale(e xml.StartElement) float64 {
 	return 1
 }
 
-func (w *svgWalker) element(name string, e xml.StartElement, m Matrix) error {
+func (w *svgWalker) element(name string, e xml.StartElement, m, defMat Matrix, group int, fill, stroke string, inDefs bool, defID string) error {
+	// <use> instantiates a previously-defined element at (x,y) under the current
+	// transform — this is how PDF→SVG (pdftocairo) renders text glyphs.
+	if name == "use" && !inDefs {
+		href := strings.TrimSpace(attr(e, "href"))
+		href = strings.TrimPrefix(href, "#")
+		raw := w.defs[href]
+		if len(raw) == 0 {
+			return nil
+		}
+		um := m.Mul(Translate(fattr(e, "x", 0), fattr(e, "y", 0)))
+		role, color := classifyRole(fill, stroke)
+		elem := w.elem
+		w.elem++
+		for _, sp := range raw {
+			t := sp.transform(um)
+			t.Role, t.Color, t.Elem, t.Group = role, color, elem, group
+			w.subs = append(w.subs, t)
+		}
+		return nil
+	}
+
 	var sps []Subpath
 	var err error
 	switch name {
@@ -127,7 +368,29 @@ func (w *svgWalker) element(name string, e xml.StartElement, m Matrix) error {
 	if err != nil {
 		return fmt.Errorf("svg <%s>: %w", name, err)
 	}
+	if len(sps) == 0 {
+		return nil
+	}
+
+	// Geometry inside <defs>/<symbol> is stored (in def-local coords) for later
+	// <use>, never drawn directly.
+	if inDefs {
+		if defID != "" {
+			for _, sp := range sps {
+				w.defs[defID] = append(w.defs[defID], sp.transform(defMat))
+			}
+		}
+		return nil
+	}
+
+	role, color := classifyRole(fill, stroke)
+	elem := w.elem
+	w.elem++
 	for _, sp := range sps {
+		sp.Role = role
+		sp.Color = color
+		sp.Elem = elem
+		sp.Group = group
 		w.subs = append(w.subs, sp.transform(m))
 	}
 	return nil

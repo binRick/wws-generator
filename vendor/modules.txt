@@ -1,0 +1,3 @@
+# rsc.io/pdf v0.1.1
+## explicit
+rsc.io/pdf

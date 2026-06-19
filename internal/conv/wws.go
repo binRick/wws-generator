@@ -35,10 +35,11 @@ type wwsFile struct {
 }
 
 type wwsCanvas struct {
-	ID           string          `json:"id"`
-	Name         string          `json:"name"`
-	Color        string          `json:"color"`
-	Objects      []wwsObject     `json:"objects"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Color string `json:"color"`
+	// Objects holds wwsObject (path) and/or wwsImageObject (raster) values.
+	Objects      []any           `json:"objects"`
 	WorkModeData wwsWorkModeData `json:"workModeData"`
 }
 
@@ -111,6 +112,55 @@ type wwsProc struct {
 	ProcessAngle    float64       `json:"processAngle"`
 	Fixed           bool          `json:"fixed"`
 	Radius          float64       `json:"radius"`
+	ImgRevertMode   string        `json:"imgRevertMode,omitempty"` // raster dithering, e.g. "jarvis"
+}
+
+// wwsImageObject is a raster engrave object (embedded base64 image).
+type wwsImageObject struct {
+	Type                     string  `json:"type"` // "image"
+	Version                  string  `json:"version"`
+	OriginX                  string  `json:"originX"`
+	OriginY                  string  `json:"originY"`
+	Left                     float64 `json:"left"`
+	Top                      float64 `json:"top"`
+	Width                    float64 `json:"width"`  // source pixels
+	Height                   float64 `json:"height"` // source pixels
+	Fill                     string  `json:"fill"`
+	Stroke                   string  `json:"stroke"`
+	StrokeWidth              float64 `json:"strokeWidth"`
+	StrokeDashArray          any     `json:"strokeDashArray"`
+	StrokeLineCap            string  `json:"strokeLineCap"`
+	StrokeDashOffset         float64 `json:"strokeDashOffset"`
+	StrokeLineJoin           string  `json:"strokeLineJoin"`
+	StrokeUniform            bool    `json:"strokeUniform"`
+	StrokeMiterLimit         float64 `json:"strokeMiterLimit"`
+	ScaleX                   float64 `json:"scaleX"` // mm per pixel
+	ScaleY                   float64 `json:"scaleY"`
+	Angle                    float64 `json:"angle"`
+	FlipX                    bool    `json:"flipX"`
+	FlipY                    bool    `json:"flipY"`
+	Opacity                  float64 `json:"opacity"`
+	Shadow                   any     `json:"shadow"`
+	Visible                  bool    `json:"visible"`
+	BackgroundColor          string  `json:"backgroundColor"`
+	FillRule                 string  `json:"fillRule"`
+	PaintFirst               string  `json:"paintFirst"`
+	GlobalCompositeOperation string  `json:"globalCompositeOperation"`
+	SkewX                    float64 `json:"skewX"`
+	SkewY                    float64 `json:"skewY"`
+	CropX                    float64 `json:"cropX"`
+	CropY                    float64 `json:"cropY"`
+	ID                       string  `json:"id"`
+	Name                     string  `json:"name"`
+	HasControls              bool    `json:"hasControls"`
+	IsLock                   bool    `json:"isLock"`
+	OriginStroke             string  `json:"originStroke"`
+	OriginStrokeForCut       string  `json:"originStrokeForCut"`
+	Sequence                 int     `json:"sequence"`
+	ProcessMode              string  `json:"processMode"`
+	Src                      string  `json:"src"`
+	CrossOrigin              any     `json:"crossOrigin"`
+	Filters                  []any   `json:"filters"`
 }
 
 type wwsPS struct {
@@ -174,63 +224,104 @@ func Build(placements []Placement, nSheets int, opt BuildOptions) (*wwsFile, err
 				ScanMode:          "SCAN_ONE_WAY",
 			},
 		}
-		layers[i] = wwsLayerData{
-			ID: id,
-			Data: []wwsLayerEntry{{
-				Type: "color", ID: cutRed, Color: cutRed, Show: true,
-			}},
-		}
 	}
 
+	// Layer rows accumulate per canvas and are grouped by color at the end.
+	type shapeRow struct{ id, color string }
+	rows := make([][]shapeRow, nSheets)
+
 	seq := 0
-	for _, pl := range placements {
-		if pl.Sheet < 0 || pl.Sheet >= nSheets {
-			return nil, fmt.Errorf("placement references sheet %d of %d", pl.Sheet, nSheets)
-		}
+	emit := func(ci int, m Matrix, sps []Subpath, role Role, color string) {
 		seq++
 		objID := "el-" + newUUID()
 
 		// Transform the exact geometry into absolute sheet-mm path commands.
-		transformed := make([]Subpath, len(pl.Piece.Subpaths))
-		for i, sp := range pl.Piece.Subpaths {
-			transformed[i] = sp.transform(pl.M)
+		transformed := make([]Subpath, len(sps))
+		for i, sp := range sps {
+			transformed[i] = sp.transform(m)
 		}
 		bb := subpathsBBox(transformed)
-		pathCmds := toPathArray(transformed)
 
 		obj := wwsObject{
 			Type: "path", Version: "5.3.0",
 			OriginX: "left", OriginY: "top",
 			Left: round3(bb.MinX), Top: round3(bb.MinY),
 			Width: round3(bb.W()), Height: round3(bb.H()),
-			Fill: "", Stroke: cutRed, StrokeWidth: 0,
+			StrokeWidth:   0,
 			StrokeLineCap: "round", StrokeDashOffset: 0, StrokeLineJoin: "round",
 			StrokeUniform: true, StrokeMiterLimit: 4,
 			ScaleX: 1, ScaleY: 1, Angle: 0,
 			Opacity: 1, Visible: true,
-			FillRule: "nonzero", PaintFirst: "fill", GlobalCompositeOperation: "source-over",
+			PaintFirst: "fill", GlobalCompositeOperation: "source-over",
 			ID: objID, Name: "element", HasControls: true, IsLock: false,
-			OriginStroke: "#FFA500", OriginStrokeForCut: cutRed,
-			Sequence: seq, ProcessMode: "cut",
-			Path: pathCmds,
+			OriginStrokeForCut: cutRed,
+			Sequence:           seq,
+			Path:               toPathArray(transformed),
 		}
-		canvases[pl.Sheet].Objects = append(canvases[pl.Sheet].Objects, obj)
-
-		f.ProcessList[objID] = wwsProc{
+		proc := wwsProc{
 			Cut:         wwsPS{Power: opt.CutPower, Speed: opt.CutSpeed, Repeat: cutRepeat(opt.CutPasses)},
 			Engrave:     wwsPS{Power: 0, Speed: 2, Repeat: 1},
 			FillEngrave: wwsPS{Power: 0, Speed: 2, Repeat: 1},
-			ProcessMode: "cut", OneWayScan: true, LineDesity: 100,
+			OneWayScan:  true, LineDesity: 100,
 			Dpi: 254, DotDuration: 230,
 			BreakPointObj: wwsBreakPoint{BreakPointNum: 2, BreakPointSize: 0.4, IsAutoBreakPoint: true},
 		}
 
-		empty := ""
-		layers[pl.Sheet].Data = append(layers[pl.Sheet].Data, wwsLayerEntry{
-			ID: objID, ParentGroupID: &empty, Base64: &empty,
-			Type: "shape", Name: strPtr("editor.color_layer.path"),
-			Color: cutRed, Show: true,
-		})
+		layerColor := color
+		switch role {
+		case RoleEngrave:
+			obj.Stroke, obj.OriginStroke, obj.FillRule = color, color, "nonzero"
+			obj.ProcessMode, proc.ProcessMode = "engrave", "engrave"
+		case RoleFillEngrave:
+			obj.Fill, obj.Stroke, obj.OriginStroke, obj.FillRule = color, color, color, "evenodd"
+			obj.ProcessMode, proc.ProcessMode = "fillEngrave", "fillEngrave"
+		default: // RoleCut
+			obj.Stroke, obj.OriginStroke, obj.FillRule = cutRed, "#FFA500", "nonzero"
+			obj.ProcessMode, proc.ProcessMode = "cut", "cut"
+			layerColor = cutRed
+		}
+
+		canvases[ci].Objects = append(canvases[ci].Objects, obj)
+		f.ProcessList[objID] = proc
+		rows[ci] = append(rows[ci], shapeRow{id: objID, color: layerColor})
+	}
+
+	for _, pl := range placements {
+		if pl.Sheet < 0 || pl.Sheet >= nSheets {
+			return nil, fmt.Errorf("placement references sheet %d of %d", pl.Sheet, nSheets)
+		}
+		if len(pl.Piece.Subpaths) > 0 {
+			emit(pl.Sheet, pl.M, pl.Piece.Subpaths, RoleCut, cutRed)
+		}
+		for _, mk := range pl.Piece.Marks {
+			emit(pl.Sheet, pl.M, mk.Subpaths, mk.Role, mk.Color)
+		}
+	}
+
+	// Build each canvas's layer list: one color header per distinct color,
+	// followed by that color's shape rows, in first-seen order.
+	for ci := 0; ci < nSheets; ci++ {
+		var order []string
+		byColor := map[string][]shapeRow{}
+		for _, r := range rows[ci] {
+			if _, ok := byColor[r.color]; !ok {
+				order = append(order, r.color)
+			}
+			byColor[r.color] = append(byColor[r.color], r)
+		}
+		var data []wwsLayerEntry
+		for _, col := range order {
+			data = append(data, wwsLayerEntry{Type: "color", ID: col, Color: col, Show: true})
+			for _, r := range byColor[col] {
+				empty := ""
+				data = append(data, wwsLayerEntry{
+					ID: r.id, ParentGroupID: &empty, Base64: &empty,
+					Type: "shape", Name: strPtr("editor.color_layer.path"),
+					Color: col, Show: true,
+				})
+			}
+		}
+		layers[ci] = wwsLayerData{ID: canvasIDs[ci], Data: data}
 	}
 
 	f.CanvasList = canvases

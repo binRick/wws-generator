@@ -94,15 +94,30 @@ type Cmd struct {
 	P  []Point
 }
 
+// Role classifies the laser operation a subpath maps to, derived from its SVG
+// stroke/fill. Red stroke -> cut; a non-none fill -> fillEngrave; any other
+// stroke -> engrave (line).
+type Role int
+
+const (
+	RoleCut Role = iota
+	RoleEngrave
+	RoleFillEngrave
+)
+
 // Subpath is a connected run of commands starting with M.
 type Subpath struct {
 	Cmds   []Cmd
 	Closed bool
+	Role   Role   // cut / engrave / fillEngrave
+	Color  string // resolved hex color (e.g. "#000000"); "" for cut (uses cutRed)
+	Elem   int    // source SVG element index, so marks from one element stay grouped
+	Group  int    // nearest ancestor <g> index (-1 if none); keeps a layer's marks together
 }
 
 // transform applies m to every point of the subpath, returning a new subpath.
 func (sp Subpath) transform(m Matrix) Subpath {
-	out := Subpath{Closed: sp.Closed, Cmds: make([]Cmd, len(sp.Cmds))}
+	out := Subpath{Closed: sp.Closed, Role: sp.Role, Color: sp.Color, Elem: sp.Elem, Group: sp.Group, Cmds: make([]Cmd, len(sp.Cmds))}
 	for i, c := range sp.Cmds {
 		nc := Cmd{Op: c.Op, P: make([]Point, len(c.P))}
 		for j, p := range c.P {

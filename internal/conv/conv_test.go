@@ -3,6 +3,9 @@ package conv
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"image"
+	"image/png"
 	"math"
 	"os"
 	"strings"
@@ -164,6 +167,67 @@ func TestNestNoOverlapAndSpacing(t *testing.T) {
 
 func approx(a, b float64) bool { return math.Abs(a-b) < 1e-6 }
 
+// Red strokes map to cut; black fills map to fillEngrave (riding along with the
+// cut piece that contains them); a non-red stroke maps to engrave. A filled
+// shape outside any cut outline still survives as its own engrave object.
+func TestColorRoleMapping(t *testing.T) {
+	svg := `<svg viewBox="0 0 200 200">
+		<style>
+			.cut { fill:none; stroke:red }
+			.fil { fill:black }
+			.scr { fill:none; stroke:#0000ff }
+		</style>
+		<rect class="cut" x="20" y="20" width="80" height="80"/>
+		<circle class="fil" cx="60" cy="60" r="15"/>
+		<path class="scr" d="M30 30 L40 40"/>
+		<rect class="fil" x="140" y="20" width="30" height="30"/>
+	</svg>`
+	out, _, err := Convert(strings.NewReader(svg), Options{
+		Name: "t", MaterialW: 300, MaterialH: 200, Spacing: 3, Margin: 5,
+		Grid: 1.0, Rotations: []float64{0}, Time: 1,
+	})
+	if err != nil {
+		t.Fatalf("convert: %v", err)
+	}
+	var f map[string]any
+	if err := json.Unmarshal(out, &f); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	modes := map[string]int{}
+	colors := map[string]bool{}
+	for _, cv := range f["canvasList"].([]any) {
+		c := cv.(map[string]any)
+		for _, ov := range c["objects"].([]any) {
+			o := ov.(map[string]any)
+			modes[o["processMode"].(string)]++
+		}
+		for _, lv := range f["layerDataList"].([]any) {
+			for _, rv := range lv.(map[string]any)["data"].([]any) {
+				r := rv.(map[string]any)
+				if r["type"] == "color" {
+					colors[r["color"].(string)] = true
+				}
+			}
+		}
+	}
+	if modes["cut"] != 1 || modes["fillEngrave"] != 2 || modes["engrave"] != 1 {
+		t.Fatalf("processMode counts = %v, want cut:1 fillEngrave:2 engrave:1", modes)
+	}
+	for _, want := range []string{"#E61F19", "#000000", "#0000FF"} {
+		if !colors[want] {
+			t.Fatalf("missing layer color %s (have %v)", want, colors)
+		}
+	}
+	// processList must have one entry per object id.
+	ids := 0
+	for _, cv := range f["canvasList"].([]any) {
+		ids += len(cv.(map[string]any)["objects"].([]any))
+	}
+	if pl := f["processList"].(map[string]any); len(pl) != ids {
+		t.Fatalf("processList has %d entries, want %d (one per object)", len(pl), ids)
+	}
+}
+
 // --- wws -> detailed json ---
 
 func TestDescribeSample(t *testing.T) {
@@ -225,6 +289,282 @@ func TestDescribeGenerated(t *testing.T) {
 			it.BBox.X+it.BBox.W > 300.5 || it.BBox.Y+it.BBox.H > 200.5 {
 			t.Fatalf("item bbox out of material: %+v", it.BBox)
 		}
+	}
+}
+
+// A tall piece carrying engraving should, with engrave alignment, be rotated so
+// the engraving lies in a flat (wider-than-tall) band; without it, it stays tall.
+func TestEngraveAlignFlattensEngraving(t *testing.T) {
+	svg := `<svg viewBox="0 0 400 400">
+		<style>.cut{fill:none;stroke:red}.fil{fill:black}</style>
+		<rect class="cut" x="10" y="10" width="30" height="200"/>
+		<rect class="fil" x="18" y="20" width="8" height="180"/>
+	</svg>`
+	engraveWH := func(align bool) (w, h float64) {
+		out, _, err := Convert(strings.NewReader(svg), Options{
+			Name: "t", MaterialW: 300, MaterialH: 300, Spacing: 3, Margin: 5,
+			Grid: 1.0, Rotations: []float64{0}, EngraveAlign: align, Time: 1,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var f map[string]any
+		if err := json.Unmarshal(out, &f); err != nil {
+			t.Fatal(err)
+		}
+		for _, cv := range f["canvasList"].([]any) {
+			for _, ov := range cv.(map[string]any)["objects"].([]any) {
+				o := ov.(map[string]any)
+				if o["processMode"] == "fillEngrave" {
+					return o["width"].(float64), o["height"].(float64)
+				}
+			}
+		}
+		t.Fatal("no fillEngrave object")
+		return
+	}
+	if w, h := engraveWH(false); h <= w {
+		t.Fatalf("engrave-align off: want tall engraving, got %.1fx%.1f", w, h)
+	}
+	if w, h := engraveWH(true); w <= h {
+		t.Fatalf("engrave-align on: want flat (wide) engraving, got %.1fx%.1f", w, h)
+	}
+}
+
+// With GroupEngrave, engrave-bearing pieces are consolidated onto their own
+// sheet(s), separate from cut-only pieces, so no sheet mixes the two.
+func TestGroupEngraveSeparatesSheets(t *testing.T) {
+	// Many cut-only squares plus a couple of engraved ones, on a small sheet so
+	// it must spill — without grouping the two kinds would share sheets.
+	var b strings.Builder
+	b.WriteString(`<svg viewBox="0 0 1000 1000"><style>.cut{fill:none;stroke:red}.fil{fill:black}</style>`)
+	for i := 0; i < 9; i++ {
+		x := 10 + (i%3)*120
+		y := 10 + (i/3)*120
+		fmt.Fprintf(&b, `<rect class="cut" x="%d" y="%d" width="90" height="90"/>`, x, y)
+	}
+	// Two engraved parts (cut square + a black fill inside each).
+	for i := 0; i < 2; i++ {
+		x := 400 + i*120
+		fmt.Fprintf(&b, `<rect class="cut" x="%d" y="400" width="90" height="90"/>`, x)
+		fmt.Fprintf(&b, `<rect class="fil" x="%d" y="420" width="50" height="50"/>`, x+20)
+	}
+	b.WriteString(`</svg>`)
+
+	out, sum, err := Convert(strings.NewReader(b.String()), Options{
+		Name: "t", MaterialW: 250, MaterialH: 250, Spacing: 3, Margin: 5, Grid: 1.0,
+		Rotations: []float64{0}, GroupEngrave: true, Time: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.EngraveSheets == 0 || sum.EngraveSheets >= sum.Sheets {
+		t.Fatalf("want engraving on a strict subset of sheets, got %d engrave / %d total", sum.EngraveSheets, sum.Sheets)
+	}
+	var f map[string]any
+	if err := json.Unmarshal(out, &f); err != nil {
+		t.Fatal(err)
+	}
+	for ci, cv := range f["canvasList"].([]any) {
+		var hasEng bool
+		for _, ov := range cv.(map[string]any)["objects"].([]any) {
+			switch ov.(map[string]any)["processMode"] {
+			case "fillEngrave", "engrave":
+				hasEng = true
+			}
+		}
+		// The first sheet holds the cut-only group, so it must carry no engraving.
+		if hasEng && ci == 0 {
+			t.Fatalf("canvas 1 should be cut-only but carries engraving")
+		}
+	}
+}
+
+// Floating marks (e.g. a label/comment) that share an SVG <g> are kept together
+// as a single piece, so the glyphs aren't scattered across the layout.
+func TestLabelGroupStaysTogether(t *testing.T) {
+	svg := `<svg viewBox="0 0 400 400">
+		<style>.cut{fill:none;stroke:red}.fil{fill:black}</style>
+		<rect class="cut" x="10" y="10" width="50" height="50"/>
+		<g id="label">
+			<rect class="fil" x="200" y="200" width="8" height="8"/>
+			<rect class="fil" x="212" y="200" width="8" height="8"/>
+			<rect class="fil" x="224" y="200" width="8" height="8"/>
+		</g>
+	</svg>`
+	subs, err := ParseSVG(strings.NewReader(svg), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cutSubs []Subpath
+	marksByElem := map[int]*Mark{}
+	var order []int
+	for _, sp := range subs {
+		if sp.Role == RoleCut {
+			cutSubs = append(cutSubs, sp)
+			continue
+		}
+		mk, ok := marksByElem[sp.Elem]
+		if !ok {
+			mk = &Mark{Role: sp.Role, Color: sp.Color, Group: sp.Group}
+			marksByElem[sp.Elem] = mk
+			order = append(order, sp.Elem)
+		}
+		mk.Subpaths = append(mk.Subpaths, sp)
+	}
+	pieces := attachMarks(buildPieces(cutSubs, flattenTol), marksByElem, order, flattenTol)
+
+	cutPieces, labelPieces, labelGlyphs := 0, 0, 0
+	for _, p := range pieces {
+		switch {
+		case len(p.Subpaths) > 0:
+			cutPieces++
+		case len(p.Marks) > 0:
+			labelPieces++
+			labelGlyphs = len(p.Marks)
+		}
+	}
+	if cutPieces != 1 {
+		t.Fatalf("cut pieces = %d, want 1", cutPieces)
+	}
+	if labelPieces != 1 || labelGlyphs != 3 {
+		t.Fatalf("label = %d piece(s) of %d glyph(s), want 1 piece of 3 (glyphs must stay together)", labelPieces, labelGlyphs)
+	}
+}
+
+// Mimics pdftocairo's PDF->SVG output: glyph geometry in <defs>, placed via
+// <use>, with color set as rgb() on a parent <g> (inherited). The converter must
+// instantiate the uses, inherit the group color, and parse rgb().
+func TestUseDefsRGBInheritance(t *testing.T) {
+	svg := `<svg width="100mm" height="100mm" viewBox="0 0 100 100">
+		<defs><g id="g0"><rect x="0" y="0" width="4" height="6"/></g></defs>
+		<g fill="rgb(0%, 0%, 0%)" stroke="none">
+			<use xlink:href="#g0" x="10" y="10"/>
+			<use xlink:href="#g0" x="20" y="10"/>
+		</g>
+		<g fill="none" stroke="rgb(100%, 0%, 0%)">
+			<rect x="40" y="40" width="30" height="30"/>
+		</g>
+	</svg>`
+	subs, err := ParseSVG(strings.NewReader(svg), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cut, fill int
+	for _, sp := range subs {
+		switch sp.Role {
+		case RoleCut:
+			cut++
+		case RoleFillEngrave:
+			fill++
+			if sp.Color != "#000000" {
+				t.Fatalf("fill color = %q, want #000000", sp.Color)
+			}
+		}
+	}
+	if cut != 1 {
+		t.Fatalf("cut subpaths = %d, want 1 (the red-stroked rect)", cut)
+	}
+	if fill != 2 {
+		t.Fatalf("fillEngrave subpaths = %d, want 2 (the two <use> glyphs)", fill)
+	}
+}
+
+// The PDF content-stream interpreter maps a red-stroked path to cut and a
+// black-filled path to fill-engrave (one paint op = one element).
+func TestPDFInterpreter(t *testing.T) {
+	in := &pdfInterp{base: Identity(), csN: map[string]int{}}
+	content := []byte("1 0 0 RG 10 10 20 20 re S " + // red rect, stroked -> cut
+		"0 0 0 rg 0 0 m 5 0 l 5 5 l h f") // black triangle, filled -> fillEngrave
+	subs := in.run(content)
+	var cut, fill int
+	for _, sp := range subs {
+		switch sp.Role {
+		case RoleCut:
+			cut++
+		case RoleFillEngrave:
+			fill++
+		}
+	}
+	if cut != 1 || fill != 1 {
+		t.Fatalf("roles = cut:%d fill:%d, want cut:1 fill:1", cut, fill)
+	}
+}
+
+// DXF entities (closed LWPOLYLINE + CIRCLE) parse into geometry; the circle
+// inside the square becomes a hole of one piece.
+func TestDXFBasic(t *testing.T) {
+	dxf := "0\nSECTION\n2\nENTITIES\n" +
+		"0\nLWPOLYLINE\n8\n0\n90\n4\n70\n1\n10\n0\n20\n0\n10\n50\n20\n0\n10\n50\n20\n50\n10\n0\n20\n50\n" +
+		"0\nCIRCLE\n8\n0\n10\n25\n20\n25\n40\n10\n" +
+		"0\nENDSEC\n0\nEOF\n"
+	subs, err := ParseDXF([]byte(dxf), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(subs) != 2 {
+		t.Fatalf("subpaths = %d, want 2 (square + circle)", len(subs))
+	}
+	bb := subpathsBBox(subs)
+	if !approx(bb.W(), 50) || !approx(bb.H(), 50) {
+		t.Fatalf("bbox = %.1fx%.1f, want 50x50", bb.W(), bb.H())
+	}
+	pieces := buildPieces(subs, flattenTol)
+	if len(pieces) != 1 || len(pieces[0].Loops) != 2 {
+		t.Fatalf("want 1 piece with a hole, got %d piece(s)", len(pieces))
+	}
+	// End-to-end emits valid JSON with a cut path.
+	out, sum, err := ConvertDXF([]byte(dxf), Options{
+		Name: "t", MaterialW: 300, MaterialH: 200, Spacing: 3, Margin: 5,
+		Grid: 1.0, Rotations: []float64{0}, Time: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.Pieces != 1 {
+		t.Fatalf("pieces = %d, want 1", sum.Pieces)
+	}
+	if !json.Valid(out) {
+		t.Fatal("DXF output is not valid JSON")
+	}
+}
+
+// A raster image converts to a single fill-engrave image object scaled to fit
+// the material minus margins.
+func TestRasterImageEngrave(t *testing.T) {
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 100, 50))); err != nil {
+		t.Fatal(err)
+	}
+	out, sum, err := ConvertRaster(buf.Bytes(), "png", Options{
+		Name: "t", MaterialW: 300, MaterialH: 200, Spacing: 3, Margin: 10, Time: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.Pieces != 1 || sum.EngraveSheets != 1 {
+		t.Fatalf("summary = %+v, want 1 piece / 1 engrave sheet", sum)
+	}
+	var f map[string]any
+	if err := json.Unmarshal(out, &f); err != nil {
+		t.Fatal(err)
+	}
+	cs := f["canvasList"].([]any)
+	if len(cs) != 1 {
+		t.Fatalf("canvases = %d, want 1", len(cs))
+	}
+	objs := cs[0].(map[string]any)["objects"].([]any)
+	if len(objs) != 1 {
+		t.Fatalf("objects = %d, want 1", len(objs))
+	}
+	o := objs[0].(map[string]any)
+	if o["type"] != "image" || o["processMode"] != "fillEngrave" {
+		t.Fatalf("object type/mode = %v/%v, want image/fillEngrave", o["type"], o["processMode"])
+	}
+	// usable = 300-20 x 200-20 = 280x180; scale = min(280/100,180/50)=2.8 -> 280x140mm
+	effW := o["width"].(float64) * o["scaleX"].(float64)
+	if math.Abs(effW-280) > 0.5 {
+		t.Fatalf("effective width = %.1f mm, want ~280", effW)
 	}
 }
 

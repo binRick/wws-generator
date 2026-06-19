@@ -5,13 +5,121 @@ import (
 	"sort"
 )
 
-// Piece is one independently-placeable part: an outer boundary plus any holes
-// nested directly inside it. Geometry is in local millimetre coordinates.
+// Piece is one independently-placeable part: an outer cut boundary plus any cut
+// holes nested directly inside it, and any engrave/fillEngrave marks that ride
+// along with it. Geometry is in local millimetre coordinates.
 type Piece struct {
-	Subpaths []Subpath // exact geometry (outer + holes), for output
-	Loops    [][]Point // flattened loops (outer first, then holes), for nesting
+	Subpaths []Subpath // exact cut geometry (outer + holes), for output
+	Loops    [][]Point // flattened cut loops (outer first, then holes), for nesting
 	Area     float64   // |area| of the outer loop, mm^2 (used to order placement)
-	BBox     Rect      // exact bounding box of all subpaths
+	BBox     Rect      // exact bounding box of the cut subpaths
+	Marks    []Mark    // engrave/fillEngrave shapes positioned with this piece
+}
+
+// Mark is non-cut geometry (engrave or fillEngrave) from a single SVG element,
+// kept together so glyph holes render via the element's fill rule.
+type Mark struct {
+	Subpaths []Subpath
+	Role     Role
+	Color    string
+	Group    int // nearest ancestor <g>; floating marks sharing a group stay together
+}
+
+// attachMarks assigns each mark to the cut piece whose outer loop contains it.
+// Marks not inside any piece are "orphans" — typically annotation/label text.
+// Orphans that share an SVG group (e.g. all the glyphs of a comment line) are
+// kept together as one piece so the text isn't scattered; ungrouped orphans
+// stand alone. Pieces are returned re-sorted largest-first for FFD nesting.
+func attachMarks(pieces []Piece, marksByElem map[int]*Mark, order []int, tol float64) []Piece {
+	orphansByGroup := map[int][]*Mark{}
+	var groupOrder []int
+	for _, elem := range order {
+		mk := marksByElem[elem]
+		if mk == nil || len(mk.Subpaths) == 0 {
+			continue
+		}
+		host := -1
+		bestArea := math.Inf(1)
+		if pt, ok := markPoint(mk, tol); ok {
+			for i := range pieces {
+				if len(pieces[i].Loops) == 0 {
+					continue
+				}
+				if pointInPolygon(pt, pieces[i].Loops[0]) && pieces[i].Area < bestArea {
+					bestArea = pieces[i].Area
+					host = i
+				}
+			}
+		}
+		if host >= 0 {
+			pieces[host].Marks = append(pieces[host].Marks, *mk)
+			continue
+		}
+		if _, ok := orphansByGroup[mk.Group]; !ok {
+			groupOrder = append(groupOrder, mk.Group)
+		}
+		orphansByGroup[mk.Group] = append(orphansByGroup[mk.Group], mk)
+	}
+
+	for _, g := range groupOrder {
+		ms := orphansByGroup[g]
+		if g < 0 {
+			// Ungrouped: each orphan stands on its own.
+			for _, mk := range ms {
+				pieces = append(pieces, orphanPiece([]*Mark{mk}))
+			}
+			continue
+		}
+		// A grouped run (e.g. a label) becomes one block, glyphs kept in place.
+		pieces = append(pieces, orphanPiece(ms))
+	}
+
+	sort.SliceStable(pieces, func(a, b int) bool { return pieces[a].Area > pieces[b].Area })
+	return pieces
+}
+
+// orphanPiece bundles floating marks into a single placeable piece whose
+// footprint is the marks' combined bounding rectangle.
+func orphanPiece(ms []*Mark) Piece {
+	bb := emptyRect()
+	marks := make([]Mark, 0, len(ms))
+	for _, mk := range ms {
+		marks = append(marks, *mk)
+		b := subpathsBBox(mk.Subpaths)
+		bb.add(Point{b.MinX, b.MinY})
+		bb.add(Point{b.MaxX, b.MaxY})
+	}
+	loop := []Point{{bb.MinX, bb.MinY}, {bb.MaxX, bb.MinY}, {bb.MaxX, bb.MaxY}, {bb.MinX, bb.MaxY}}
+	return Piece{
+		Loops: [][]Point{loop},
+		Area:  bb.W() * bb.H(),
+		BBox:  bb,
+		Marks: marks,
+	}
+}
+
+// markPoint returns a point inside the mark's largest subpath, for containment.
+func markPoint(mk *Mark, tol float64) (Point, bool) {
+	bestArea := -1.0
+	var best []Point
+	for _, sp := range mk.Subpaths {
+		poly := sp.Flatten(tol)
+		if len(poly) < 3 {
+			continue
+		}
+		if a := math.Abs(polygonArea(poly)); a > bestArea {
+			bestArea, best = a, poly
+		}
+	}
+	if best == nil {
+		bb := subpathsBBox(mk.Subpaths)
+		return Point{(bb.MinX + bb.MaxX) / 2, (bb.MinY + bb.MaxY) / 2}, true
+	}
+	bb := polylineBBox(best)
+	if p, ok := interiorPoint(best, bb); ok {
+		return p, true
+	}
+	return Point{(bb.MinX + bb.MaxX) / 2, (bb.MinY + bb.MaxY) / 2}, true
 }
 
 // buildPieces groups flat subpaths into pieces using even/odd containment.
