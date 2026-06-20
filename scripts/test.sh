@@ -168,6 +168,7 @@ expect_ok "scale override"       -- "$SVG2WWS" --in "$FIX/multi.svg" --material 
 expect_ok "material star sep"    -- "$SVG2WWS" --in "$FIX/multi.svg" --material 300*200 --out "$TMP/f7.wws"
 expect_ok "no-engrave-align"     -- "$SVG2WWS" --in "$FIX/multi.svg" --material 300x200 --no-engrave-align --out "$TMP/f8.wws"
 expect_ok "no-group-engrave"     -- "$SVG2WWS" --in "$FIX/multi.svg" --material 300x200 --no-group-engrave --out "$TMP/f9.wws"
+expect_ok "no-orient"            -- "$SVG2WWS" --in "$FIX/multi.svg" --material 300x200 --no-orient --out "$TMP/f10.wws"
 # --name lands in output; cut power/passes propagate to processList.
 "$SVG2WWS" --in "$FIX/multi.svg" --material 300x200 --name ZZTOP --power 60 --passes 3 --out "$TMP/fn.wws" >/dev/null
 python3 -c 'import json,sys
@@ -179,6 +180,19 @@ ok "ok (--name, --power, --passes propagate)"
 out="$("$SVG2WWS" --in "$FIX/multi.svg" --material 300x200 --out "$TMP/fg.wws")"
 echo "$out" | grep -q "engraving consolidated" || fail "expected engrave consolidation:\n$out"
 ok "ok (engrave consolidated onto its own sheet)"
+
+# sheet orientation: a portrait --material is auto-oriented landscape (long side
+# horizontal) to match the laser bed; --no-orient preserves the given WxH.
+step "svg2wws: sheet orientation (landscape by default)"
+out="$("$SVG2WWS" --in "$FIX/multi.svg" --material 200x300 --out "$TMP/orient.wws")"
+echo "$out" | grep -q 'of 300x200 mm' || fail "portrait 200x300 should orient to 300x200:\n$out"
+echo "$out" | grep -q 'oriented landscape'      || fail "expected an orientation note:\n$out"
+valid_wws "$TMP/orient.wws" 300 200
+out="$("$SVG2WWS" --in "$FIX/multi.svg" --material 200x300 --no-orient --out "$TMP/noorient.wws")"
+echo "$out" | grep -q 'of 200x300 mm' || fail "--no-orient should keep 200x300:\n$out"
+if echo "$out" | grep -q 'oriented landscape'; then fail "--no-orient must not orient:\n$out"; fi
+valid_wws "$TMP/noorient.wws" 200 300
+ok "ok (auto-orient landscape by default; --no-orient preserves WxH)"
 
 # ------------------------------------------------------ adversarial / punishment
 step "svg2wws: malformed & edge inputs must error cleanly (no panic)"

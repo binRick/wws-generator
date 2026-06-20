@@ -36,6 +36,7 @@ type flags struct {
 	name         string
 	engraveAlign bool
 	groupEngrave bool
+	noOrient     bool
 }
 
 func run(args []string) error {
@@ -64,6 +65,16 @@ func run(args []string) error {
 	mw, mh, err := parseMaterial(f.material)
 	if err != nil {
 		return err
+	}
+	// Laser beds are landscape (wider than they are deep), so by default orient
+	// the sheet with its long side horizontal: e.g. a 12×20" sheet passed as
+	// --material 305x508 cuts with the 508 mm (20") side running across the bed,
+	// not up it. --no-orient keeps the exact WxH given.
+	givenW, givenH := mw, mh
+	oriented := false
+	if !f.noOrient && mh > mw {
+		mw, mh = mh, mw
+		oriented = true
 	}
 	rots, err := parseRotations(f.rotations)
 	if err != nil {
@@ -156,6 +167,10 @@ func run(args []string) error {
 	fmt.Printf("Wrote %s\n", out)
 	fmt.Printf("  %d piece(s) nested onto %d sheet(s) of %.0fx%.0f mm (%d bytes)\n",
 		sum.Pieces, sum.Sheets, mw, mh, sum.Bytes)
+	if oriented {
+		fmt.Printf("  sheet oriented landscape (long side horizontal) from %.0fx%.0f; pass --no-orient to keep it as given\n",
+			givenW, givenH)
+	}
 	align := "engrave-align on"
 	if !f.engraveAlign {
 		align = "engrave-align off"
@@ -276,6 +291,10 @@ func (fs *flagSet) parse(args []string) error {
 			f.groupEngrave = true
 		case "--no-group-engrave":
 			f.groupEngrave = false
+		case "--orient":
+			f.noOrient = false
+		case "--no-orient":
+			f.noOrient = true
 		default:
 			return fmt.Errorf("unknown flag %q (try --help)", a)
 		}
@@ -322,7 +341,9 @@ Required:
   --in FILE          input design: .svg, .pdf, .ai, .dxf, or a raster
                      .png/.jpg/.gif (embedded as fill-engrave). All parsed
                      natively — no external tools.
-  --material WxH     sheet size in mm (e.g. 300x200)
+  --material WxH     sheet size in mm (e.g. 300x200). By default the sheet is
+                     oriented landscape (long side horizontal) to match the
+                     laser bed; see --no-orient.
 
 Options:
   --out FILE         output .wws (default: <input>.wws)
@@ -339,6 +360,9 @@ Options:
   --no-group-engrave allow engrave pieces to share sheets with cut-only pieces.
                      By default, engrave-bearing pieces are consolidated onto
                      their own sheet(s) so the cut-only sheets carry no engraving.
+  --no-orient        keep the sheet exactly as --material WxH. By default the
+                     sheet's long side is placed horizontal (landscape) to match
+                     the laser bed, so e.g. --material 305x508 cuts as 508x305.
   --scale F          force user-unit -> mm factor (default: auto; 1 unit = 1 mm)
   --power N          cut power 0-100 (default 0; set per material in MakeIt!)
   --speed N          cut speed (default 5)
